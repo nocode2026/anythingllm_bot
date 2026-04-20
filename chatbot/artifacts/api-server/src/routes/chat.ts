@@ -15,11 +15,137 @@ import { buildActionButtons } from '../lib/actionButtons';
 
 export const chatRouter = Router();
 
+const INSURANCE_PAGE_URL = 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/';
+
+type InsuranceVariantId = 'zdrowotne' | 'nnw' | 'oc';
+
+const INSURANCE_VARIANTS: Array<{
+  id: InsuranceVariantId;
+  label: string;
+  keywords: string[];
+  intro: string;
+  nextStep: string;
+  detailsLinkLabel: string;
+  detailsLinkUrl: string;
+}> = [
+  {
+    id: 'zdrowotne',
+    label: 'Ubezpieczenie zdrowotne',
+    keywords: ['zdrowotne', 'zdrowotny', 'nfz', 'skladka zdrowotna'],
+    intro: 'Ubezpieczenie zdrowotne dotyczy prawa do świadczeń medycznych. Zwykle kluczowe jest: kto może zostać zgłoszony, od kiedy działa zgłoszenie i jakie dokumenty są potrzebne.',
+    nextStep: 'Jeśli chcesz zgłosić się przez uczelnię, pierwszym krokiem jest złożenie wniosku o objęcie ubezpieczeniem zdrowotnym w NFZ.',
+    detailsLinkLabel: 'Wniosek o objęcie ubezpieczeniem zdrowotnym (NFZ)',
+    detailsLinkUrl: 'https://student.sum.edu.pl/wp-content/uploads/2026/02/Wniosek_ubezp_zdrowotne_NFZ.pdf',
+  },
+  {
+    id: 'nnw',
+    label: 'Ubezpieczenie NNW',
+    keywords: ['nnw', 'nastepstw nieszczesliwych wypadkow', 'następstw nieszczęśliwych wypadków'],
+    intro: 'Ubezpieczenie NNW dotyczy następstw nieszczęśliwych wypadków. Najczęściej sprawdza się zakres ochrony, okres obowiązywania i procedurę zgłoszenia szkody.',
+    nextStep: 'Najpierw sprawdź zakres ochrony i wariant, który chcesz wybrać, a potem przejdź przez formularz zgłoszeniowy.',
+    detailsLinkLabel: 'Ubezpieczenie studentów i doktorantów',
+    detailsLinkUrl: INSURANCE_PAGE_URL,
+  },
+  {
+    id: 'oc',
+    label: 'Ubezpieczenie OC',
+    keywords: ['oc', 'odpowiedzialnosci cywilnej', 'odpowiedzialności cywilnej'],
+    intro: 'Ubezpieczenie OC dotyczy odpowiedzialności cywilnej, czyli szkód wyrządzonych osobom trzecim. W praktyce warto sprawdzić zakres ochrony i sytuacje wyłączone z odpowiedzialności.',
+    nextStep: 'Najpierw upewnij się, jakie sytuacje obejmuje polisa OC i czy dotyczy też praktyk lub zajęć klinicznych.',
+    detailsLinkLabel: 'Ubezpieczenie studentów i doktorantów',
+    detailsLinkUrl: INSURANCE_PAGE_URL,
+  },
+];
+
 function stripSuggestedSection(answerText: string): string {
   // Remove model-generated "Mozesz tez zapytac" section to avoid duplicate numbered lists.
   return answerText
     .replace(/\n\s*(Możesz też zapytać|Mozesz tez zapytac)\s*:\s*[\s\S]*$/i, '')
     .trim();
+}
+
+function normalizeSourceUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return parsed.toString();
+  } catch {
+    return url.trim();
+  }
+}
+
+function normalizeSourceTitle(title: string): string {
+  return title
+    .replace(/\s*\((kopia|copy)\)\s*/gi, ' ')
+    .replace(/\b(kopia|copy)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildUniqueSources(chunks: Array<{ source_url: string; title: string | null; text: string; publish_date: string | null }>): Array<{ url: string; title: string; excerpt: string; publish_date: string | null }> {
+  const unique = new Map<string, { url: string; title: string; excerpt: string; publish_date: string | null }>();
+  const nonCopyTitles = new Set(
+    chunks
+      .map((chunk) => ({
+        title: normalizeSourceTitle(chunk.title ?? chunk.source_url),
+        raw: `${chunk.title ?? ''} ${chunk.source_url}`,
+      }))
+      .filter((row) => row.title && !/\b(kopia|copy)\b/i.test(row.raw))
+      .map((row) => row.title.toLowerCase())
+  );
+
+  for (const chunk of chunks) {
+    const url = normalizeSourceUrl(chunk.source_url);
+    const title = normalizeSourceTitle(chunk.title ?? chunk.source_url) || url;
+    const excerpt = chunk.text.slice(0, 280);
+    const raw = `${chunk.title ?? ''} ${chunk.source_url}`;
+    const candidateIsCopy = /\b(kopia|copy)\b/i.test(raw);
+
+    if (candidateIsCopy && nonCopyTitles.has(title.toLowerCase())) {
+      continue;
+    }
+
+    const current = unique.get(url);
+
+    if (!current) {
+      unique.set(url, { url, title, excerpt, publish_date: chunk.publish_date });
+      continue;
+    }
+
+    const currentIsCopy = /\b(kopia|copy)\b/i.test(current.title);
+
+    if (currentIsCopy && !candidateIsCopy) {
+      unique.set(url, { url, title, excerpt, publish_date: chunk.publish_date });
+      continue;
+    }
+
+    if (excerpt.length > current.excerpt.length) {
+      unique.set(url, { ...current, excerpt, publish_date: chunk.publish_date });
+    }
+  }
+
+  const values = Array.from(unique.values());
+  const byTitle = new Set<string>();
+  return values.filter((item) => {
+    const key = item.title.toLowerCase();
+    if (byTitle.has(key)) return false;
+    byTitle.add(key);
+    return true;
+  });
+}
+
+function userExplicitlyWantsSource(message: string): boolean {
+  return /(link|źródł|zrodl|stron|regulamin|oficjaln|potwierd|podstawa|gdzie znajd|daj link|pokaż link|pokaz link)/i.test(message);
+}
+
+function detectInsuranceVariant(message: string): InsuranceVariantId | null {
+  const lower = message.toLowerCase();
+  for (const variant of INSURANCE_VARIANTS) {
+    if (variant.keywords.some((k) => lower.includes(k))) return variant.id;
+  }
+  return null;
 }
 
 const MessageBodySchema = z.object({
@@ -58,6 +184,7 @@ chatRouter.post('/message', async (req, res) => {
 
   // ── 3. Query classification ──
   const classification = classifyQuery(message, effectiveFaculty);
+  const insuranceVariantId = detectInsuranceVariant(message);
 
   // ── 4. Follow-up handling ──
   let resolvedFaculty = classification.faculty_id;
@@ -124,6 +251,26 @@ chatRouter.post('/message', async (req, res) => {
         'Czy chodzi o stypendium, praktyki, harmonogram czy dziekanat?',
         'Czy mam podac informacje dla konkretnego wydzialu?',
         'Czy chcesz od razu link do odpowiedniej strony?',
+      ],
+    });
+  }
+
+  if (
+    resolvedScope === 'general' &&
+    classification.topic_tags.includes('ubezpieczenie') &&
+    !insuranceVariantId
+  ) {
+    return res.json({
+      session_id: session.id,
+      answer: 'Ubezpieczenia studenckie najczęściej dzielą się na trzy obszary: zdrowotne, NNW i OC. Każdy z nich dotyczy czegoś innego.',
+      response_type: 'clarification',
+      sources: [],
+      final_answer_confidence: 0,
+      clarification_question: 'O które ubezpieczenie chodzi: zdrowotne, NNW czy OC?',
+      suggested_questions: [
+        'Ubezpieczenie zdrowotne',
+        'Ubezpieczenie NNW',
+        'Ubezpieczenie OC',
       ],
     });
   }
@@ -215,23 +362,53 @@ chatRouter.post('/message', async (req, res) => {
 
   const isGeneralLegitymacja =
     resolvedScope === 'general' && resolvedTopicTags.includes('legitymacja');
+  const isGeneralStypendium =
+    resolvedScope === 'general' && resolvedTopicTags.includes('stypendium');
+  const isGeneralPraktyki =
+    resolvedScope === 'general' && resolvedTopicTags.includes('praktyki');
+  const isGeneralUbezpieczenie =
+    resolvedScope === 'general' && resolvedTopicTags.includes('ubezpieczenie');
+  const wantsSource = userExplicitlyWantsSource(message);
+  let autoComposedAnswer = false;
 
   if (isGeneralLegitymacja) {
     const asksForFaculty = /wydzia[łl]|z którego wydziału|wybierz swój wydział/i.test(answer.answer_text);
     if (asksForFaculty || answer.response_type !== 'answer') {
       answer.answer_text =
-        'Informacje o legitymacji studenckiej (wydanie, przedłużenie, zgubienie i mLegitymacja) znajdziesz na stronie usług informatycznych dla studentów: https://student.sum.edu.pl/uslugi-informatyczne-dla-studentow/';
+        'Legitymacja studencka potwierdza Twój status studenta. Najczęściej chodzi o jej wydanie, przedłużenie ważności, mLegitymację albo duplikat po zgubieniu. Jeśli chcesz, mogę rozpisać jeden z tych tematów krok po kroku.';
       answer.response_type = 'answer';
       answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.8);
       answer.clarification_question = null;
-      answer.sources = [
-        {
-          url: 'https://student.sum.edu.pl/uslugi-informatyczne-dla-studentow/',
-          title: 'Usługi informatyczne dla studentów',
-          excerpt: 'Informacje o legitymacji studenckiej i mLegitymacji.',
-          publish_date: null,
-        },
-      ];
+      autoComposedAnswer = true;
+    }
+  }
+
+  if (isGeneralStypendium && retrieval.chunks.length > 0) {
+    answer.answer_text =
+      'Na SUM najczęściej spotkasz cztery formy wsparcia: stypendium Rektora, stypendium socjalne, stypendium Ministra i zapomogę. To, z czego możesz skorzystać, zależy od Twojej sytuacji materialnej, wyników w nauce albo szczególnej sytuacji życiowej. Jeśli chcesz, mogę krótko wyjaśnić różnicę między nimi albo opisać jedną z tych form dokładniej.';
+    answer.response_type = 'answer';
+    answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.85);
+    answer.clarification_question = null;
+    autoComposedAnswer = true;
+  }
+
+  if (isGeneralPraktyki && retrieval.chunks.length > 0 && answer.response_type !== 'answer') {
+    answer.answer_text =
+      'Praktyki zawodowe zwykle wymagają sprawdzenia czterech rzeczy: zasad zaliczenia, wymaganych dokumentów, terminów oraz miejsca odbywania praktyk. Szczegóły mogą zależeć od kierunku i wydziału. Jeśli chcesz, mogę doprecyzować to dla Twojego wydziału albo rozpisać, od czego zacząć.';
+    answer.response_type = 'answer';
+    answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.75);
+    answer.clarification_question = null;
+    autoComposedAnswer = true;
+  }
+
+  if (isGeneralUbezpieczenie && insuranceVariantId) {
+    const variant = INSURANCE_VARIANTS.find((v) => v.id === insuranceVariantId);
+    if (variant) {
+      answer.answer_text = `${variant.intro} ${variant.nextStep} Jeśli chcesz więcej, sprawdź: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
+      answer.response_type = 'answer';
+      answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.85);
+      answer.clarification_question = null;
+      autoComposedAnswer = true;
     }
   }
 
@@ -245,15 +422,10 @@ chatRouter.post('/message', async (req, res) => {
   }
 
   // Never expose model-invented sources; return only sources from retrieval.
-  answer.sources = retrieval.chunks.map((c) => ({
-    url: c.source_url,
-    title: c.title ?? c.source_url,
-    excerpt: c.text.slice(0, 280),
-    publish_date: c.publish_date,
-  }));
+  answer.sources = buildUniqueSources(retrieval.chunks);
 
   // ── 10. Persist assistant message ──
-  const sources = retrieval.chunks.map(c => ({ url: c.source_url, title: c.title }));
+  const sources = answer.sources.map((s) => ({ url: s.url, title: s.title }));
 
   const assistantMsgId = await saveMessage(session.id, {
     role: 'assistant',
@@ -305,34 +477,47 @@ chatRouter.post('/message', async (req, res) => {
       : 'Informacja może być niepełna — sprawdź bezpośrednio w źródle.';
   }
 
-  const suggestedQuestions = buildSuggestedQuestions({
-    currentTopicTags: resolvedTopicTags,
-    previousTopicTags: session.last_resolved_topic_tags,
-    answerText: answer.answer_text,
-    userMessage: message,
-    isFollowUp: classification.is_follow_up,
-    responseType: answer.response_type,
-    scope: resolvedScope,
-    facultyId: resolvedFaculty,
-  });
-
-  const actionButtons = buildActionButtons({
+  const actionButtons = await buildActionButtons({
     topicTags: resolvedTopicTags,
     scope: resolvedScope,
     facultyId: resolvedFaculty,
     responseType: answer.response_type,
+    sourceUrls: answer.sources.map((source) => source.url),
   });
+
+  const shouldSuppressAuxiliarySections = answer.response_type === 'answer' || autoComposedAnswer || !wantsSource;
+
+  const shouldSuppressSuggestions =
+    shouldSuppressAuxiliarySections ||
+    (resolvedTopicTags.includes('praktyki') && answer.response_type === 'answer' && actionButtons.length > 0);
+
+  let suggestedQuestions = shouldSuppressSuggestions
+    ? []
+    : buildSuggestedQuestions({
+      currentTopicTags: resolvedTopicTags,
+      previousTopicTags: session.last_resolved_topic_tags,
+      answerText: answer.answer_text,
+      userMessage: message,
+      isFollowUp: classification.is_follow_up,
+      responseType: answer.response_type,
+      scope: resolvedScope,
+      facultyId: resolvedFaculty,
+    });
+
+  if (answer.response_type === 'answer') {
+    suggestedQuestions = [];
+  }
 
   return res.json({
     session_id: session.id,
     answer: answer.answer_text,
     response_type: answer.response_type,
-    sources: answer.sources,
+    sources: shouldSuppressAuxiliarySections ? [] : answer.sources,
     final_answer_confidence: answer.final_answer_confidence,
     retrieval_confidence: retrieval.retrieval_confidence,
     clarification_question: answer.clarification_question,
     suggested_questions: suggestedQuestions,
-    action_buttons: actionButtons,
+    action_buttons: shouldSuppressAuxiliarySections ? [] : actionButtons,
     confidence_note: confidenceNote,
     resolved_scope: resolvedScope,
     resolved_faculty_id: resolvedFaculty,
