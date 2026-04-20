@@ -1,0 +1,61 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
+.logoIcon { font-size: 22px; }
+.logoText { font-size: 16px; font-weight: 700; }
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.75);
+  padding: 12px 20px;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.navItem:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+
+.navItemActive {
+  background: rgba(255,255,255,0.18) !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.main {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+}

@@ -1,0 +1,447 @@
+openapi: 3.1.0
+info:
+  title: SUM Chatbot API
+  version: 1.0.0
+  description: |
+    RAG chatbot API dla student.sum.edu.pl (Śląski Uniwersytet Medyczny).
+    Obsługuje pytania studentów z hybrydowym wyszukiwaniem (pgvector + full-text).
+
+servers:
+  - url: http://localhost:3001
+    description: Lokalny serwer deweloperski
+  - url: https://chatbot.sum.edu.pl
+    description: Produkcja
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      tags: [System]
+      responses:
+        "200":
+          description: Serwer działa
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/chat/message:
+    post:
+      summary: Wyślij wiadomość i uzyskaj odpowiedź bota
+      operationId: sendMessage
+      tags: [Chat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Odpowiedź bota
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/chat/session/{sessionId}:
+    get:
+      summary: Pobierz historię sesji
+      operationId: getSession
+      tags: [Chat]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Historia sesji z wiadomościami
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionHistory"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Usuń sesję
+      operationId: deleteSession
+      tags: [Chat]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Sesja usunięta
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/stats:
+    get:
+      summary: Statystyki systemu
+      operationId: getStats
+      tags: [Admin]
+      responses:
+        "200":
+          description: Statystyki
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+
+  /api/admin/unanswered:
+    get:
+      summary: Pytania bez odpowiedzi (fallback)
+      operationId: getUnanswered
+      tags: [Admin]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Lista pytań fallback
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MessageRecord"
+
+  /api/admin/low-confidence:
+    get:
+      summary: Pytania z niskim confidence
+      operationId: getLowConfidence
+      tags: [Admin]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Lista pytań z ostrzeżeniem confidence
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MessageRecord"
+
+  /api/admin/sources:
+    get:
+      summary: Lista źródeł wiedzy
+      operationId: getSources
+      tags: [Admin]
+      responses:
+        "200":
+          description: Lista źródeł
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceRecord"
+
+  /api/admin/reindex:
+    post:
+      summary: Uruchom reindeksację bazy wiedzy
+      operationId: startReindex
+      tags: [Admin]
+      responses:
+        "202":
+          description: Job uruchomiony (asynchronicznie)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+
+  /api/admin/reindex/{jobId}:
+    get:
+      summary: Status reindeksacji
+      operationId: getReindexStatus
+      tags: [Admin]
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Status joba
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReindexStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Treść pytania studenta
+        session_id:
+          type: string
+          format: uuid
+          description: ID sesji (opcjonalne — jeśli brak, tworzona jest nowa sesja)
+        faculty_override:
+          type: string
+          nullable: true
+          enum: [wnmz, wnmk, wnozk, wnf, wzpb, fbb]
+          description: Jawne wymuszenie wydziału (np. z onboardingu widgetu)
+
+    ChatResponse:
+      type: object
+      required:
+        - session_id
+        - answer
+        - response_type
+        - retrieval_confidence
+        - final_answer_confidence
+        - scope
+        - sources
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        answer:
+          type: string
+          description: Treść odpowiedzi bota
+        response_type:
+          type: string
+          enum: [answer, fallback, clarification, refusal]
+        retrieval_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        final_answer_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        scope:
+          type: string
+          enum: [general, faculty]
+        faculty_id:
+          type: string
+          nullable: true
+          enum: [wnmz, wnmk, wnozk, wnf, wzpb, fbb]
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/Source"
+        clarification_question:
+          type: string
+          nullable: true
+        confidence_note:
+          type: string
+          nullable: true
+          description: Komunikat ostrzegawczy przy niskim confidence
+
+    Source:
+      type: object
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        scope:
+          type: string
+        faculty_id:
+          type: string
+          nullable: true
+
+    SessionHistory:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        faculty_context:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageRecord"
+
+    MessageRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        message:
+          type: string
+        response_type:
+          type: string
+          enum: [answer, fallback, clarification, refusal]
+          nullable: true
+        retrieval_confidence:
+          type: number
+          nullable: true
+        final_answer_confidence:
+          type: number
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Stats:
+      type: object
+      properties:
+        total_chunks:
+          type: integer
+        total_sources:
+          type: integer
+        total_sessions:
+          type: integer
+        total_messages:
+          type: integer
+        answered_questions:
+          type: integer
+        fallback_questions:
+          type: integer
+        coverage_score:
+          type: number
+          description: answered_questions / total_questions (0–1)
+        avg_retrieval_confidence:
+          type: number
+
+    SourceRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        url:
+          type: string
+          format: uri
+        scope:
+          type: string
+        faculty_id:
+          type: string
+          nullable: true
+        chunk_count:
+          type: integer
+        last_ingested_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, error, pending]
+
+    ReindexStatus:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, done, error]
+        progress:
+          type: integer
+          nullable: true
+        total:
+          type: integer
+          nullable: true
+        message:
+          type: string
+          nullable: true
+
+  responses:
+    BadRequest:
+      description: Nieprawidłowe dane wejściowe
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    NotFound:
+      description: Nie znaleziono zasobu
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    RateLimited:
+      description: Przekroczono limit żądań
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+    InternalError:
+      description: Błąd serwera
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }

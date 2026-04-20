@@ -1,0 +1,91 @@
+.loading {
+  color: var(--text-secondary);
+  padding: 40px;
+}
+
+.pageTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 24px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.card_green { border-left: 4px solid var(--accent); }
+.card_yellow { border-left: 4px solid #f9a825; }
+.card_red { border-left: 4px solid var(--danger); }
+
+.cardIcon { font-size: 24px; margin-bottom: 8px; }
+.cardValue { font-size: 28px; font-weight: 700; color: var(--primary); }
+.cardLabel { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+.reindexSection {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  max-width: 600px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.sectionDesc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.reindexBtn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+
+.reindexBtn:hover:not(:disabled) {
+  background: var(--primary-light);
+}
+
+.reindexBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.jobStatus {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #e3f2fd;
+  color: #0d47a1;
+}
+
+.job_done { background: var(--badge-green); color: var(--badge-green-text); }
+.job_error { background: var(--badge-red); color: var(--badge-red-text); }
+.job_running { background: #fff9c4; color: #f57f17; }

@@ -1,0 +1,24 @@
+{
+  "name": "@sum/scripts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "ingest": "tsx src/ingestion/run.ts",
+    "ingest:mock": "MOCK_MODE=true tsx src/ingestion/run.ts",
+    "reindex": "tsx src/ingestion/run.ts --reindex",
+    "test:acceptance": "tsx src/acceptance/runner.ts"
+  },
+  "dependencies": {
+    "@sum/db": "workspace:*",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.4.0",
+    "openai": "^4.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.8",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,6 @@
+packages:
+  - 'lib/*'
+  - 'artifacts/*'
+  - 'scripts'
+  - 'chat-widget'
+  - 'admin-panel'

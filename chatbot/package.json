@@ -1,0 +1,18 @@
+{
+  "name": "sum-chatbot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @sum/api-server dev",
+    "dev:widget": "pnpm --filter @sum/chat-widget dev",
+    "dev:admin": "pnpm --filter @sum/admin-panel dev",
+    "build": "pnpm -r build",
+    "ingest": "pnpm --filter @sum/scripts ingest",
+    "ingest:mock": "pnpm --filter @sum/scripts ingest:mock",
+    "test:acceptance": "pnpm --filter @sum/scripts test:acceptance"
+  },
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=8"
+  }
+}

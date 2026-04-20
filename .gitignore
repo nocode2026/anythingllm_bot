@@ -1,0 +1,5 @@
+.env
+storage/
+sync/node_modules/
+sync/output/
+*.log
