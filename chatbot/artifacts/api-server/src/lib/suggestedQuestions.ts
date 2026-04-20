@@ -5,9 +5,9 @@ const TOPIC_SUGGESTIONS: Record<string, string[]> = {
     'Gdzie zglosic problem z polisa?',
   ],
   stypendium: [
-    'Jakie sa warunki otrzymania tego stypendium?',
-    'Jakie dokumenty trzeba zlozyc?',
-    'Gdzie sprawdzic terminy naboru?',
+    'Stypendium Rektora',
+    'Stypendium socjalne',
+    'Stypendium Ministra',
   ],
   legitymacja: [
     'Co zrobic, gdy zgubie legitymacje?',

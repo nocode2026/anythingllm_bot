@@ -28,6 +28,13 @@ interface Source {
   publish_date?: string | null;
 }
 
+interface ActionButton {
+  label: string;
+  kind: 'link' | 'query';
+  url?: string;
+  query?: string;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -35,6 +42,7 @@ interface Message {
   response_type?: 'answer' | 'fallback' | 'clarification' | 'refusal';
   sources?: Source[];
   suggested_questions?: string[];
+  action_buttons?: ActionButton[];
   final_answer_confidence?: number;
   confidence_note?: string | null;
   ts: Date;
@@ -108,6 +116,7 @@ export function ChatWidget({ apiUrl, theme }: Props) {
         response_type: data.response_type,
         sources: data.sources ?? [],
         suggested_questions: data.suggested_questions ?? [],
+        action_buttons: data.action_buttons ?? [],
         final_answer_confidence: data.final_answer_confidence,
         confidence_note: data.confidence_note,
         ts: new Date(),
@@ -204,11 +213,43 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                       {msg.sources && msg.sources.length > 0 && (
                         <div className={styles.sources}>
                           <span className={styles.sourcesLabel}>Zrodla:</span>
-                          {msg.sources.map((s, i) => (
-                            <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className={styles.sourceLink}>
-                              {s.title || s.url}
-                            </a>
-                          ))}
+                          <div className={styles.actionRow}>
+                            {msg.sources.map((s, i) => (
+                              <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className={styles.linkBtn}>
+                                {s.title || s.url}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {msg.action_buttons && msg.action_buttons.length > 0 && (
+                        <div className={styles.sources}>
+                          <span className={styles.sourcesLabel}>Przejdz od razu:</span>
+                          <div className={styles.actionRow}>
+                            {msg.action_buttons.map((button, i) => (
+                              button.kind === 'link' && button.url ? (
+                                <a
+                                  key={`${msg.id}_ab_${i}`}
+                                  href={button.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.linkBtn}
+                                >
+                                  {button.label}
+                                </a>
+                              ) : (
+                                <button
+                                  key={`${msg.id}_ab_${i}`}
+                                  className={styles.quickBtn}
+                                  onClick={() => sendMessage(button.query ?? button.label)}
+                                  type="button"
+                                >
+                                  {button.label}
+                                </button>
+                              )
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -216,16 +257,18 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                       {msg.suggested_questions && msg.suggested_questions.length > 0 && (
                         <div className={styles.sources}>
                           <span className={styles.sourcesLabel}>Mozesz tez zapytac:</span>
-                          {msg.suggested_questions.map((q, i) => (
-                            <button
-                              key={`${msg.id}_sq_${i}`}
-                              className={styles.quickBtn}
-                              onClick={() => sendMessage(q)}
-                              type="button"
-                            >
-                              {q}
-                            </button>
-                          ))}
+                          <div className={styles.actionRow}>
+                            {msg.suggested_questions.map((q, i) => (
+                              <button
+                                key={`${msg.id}_sq_${i}`}
+                                className={styles.quickBtn}
+                                onClick={() => sendMessage(q)}
+                                type="button"
+                              >
+                                {q}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
 

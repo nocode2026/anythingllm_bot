@@ -11,6 +11,7 @@ import {
 import { moderateInput, moderateOutput, getModerationResponse } from '../lib/moderationGuard';
 import { logEvent } from '../lib/analytics';
 import { buildSuggestedQuestions } from '../lib/suggestedQuestions';
+import { buildActionButtons } from '../lib/actionButtons';
 
 export const chatRouter = Router();
 
@@ -315,6 +316,13 @@ chatRouter.post('/message', async (req, res) => {
     facultyId: resolvedFaculty,
   });
 
+  const actionButtons = buildActionButtons({
+    topicTags: resolvedTopicTags,
+    scope: resolvedScope,
+    facultyId: resolvedFaculty,
+    responseType: answer.response_type,
+  });
+
   return res.json({
     session_id: session.id,
     answer: answer.answer_text,
@@ -324,6 +332,7 @@ chatRouter.post('/message', async (req, res) => {
     retrieval_confidence: retrieval.retrieval_confidence,
     clarification_question: answer.clarification_question,
     suggested_questions: suggestedQuestions,
+    action_buttons: actionButtons,
     confidence_note: confidenceNote,
     resolved_scope: resolvedScope,
     resolved_faculty_id: resolvedFaculty,
