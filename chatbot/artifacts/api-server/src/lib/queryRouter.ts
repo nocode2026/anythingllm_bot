@@ -26,7 +26,7 @@ export const FACULTIES: Record<string, string[]> = {
 export const FACULTY_PROGRAMS: Record<string, { id: string; name: string; keywords: string[] }[]> = {
   wnozk: [
     { id: 'pielegniarstwo', name: 'Pielęgniarstwo', keywords: ['pielęgniarstwo', 'pielegniarstwo', 'pielęgniarstwa', 'pielegniarstwa'] },
-    { id: 'fizjoterapia', name: 'Fizjoterapia', keywords: ['fizjoterapia'] },
+    { id: 'fizjoterapia', name: 'Fizjoterapia', keywords: ['fizjoterapia', 'fizjoterapii'] },
     { id: 'poloznictwo', name: 'Położnictwo', keywords: ['położnictwo', 'poloznictwo', 'położnictwa', 'poloznictwa'] },
     { id: 'elektroradiologia', name: 'Elektroradiologia', keywords: ['elektroradiologia'] },
   ],
@@ -43,7 +43,7 @@ export const GENERAL_TOPICS = [
 export const TOPIC_ALIASES: Record<string, string[]> = {
   stypendium: ['stypendium', 'stypa', 'stypendium rektora', 'stypendium socjalne', 'stypendium ministra'],
   dziekanat: ['dzikanat', 'dziekanat', 'dziekanatu', 'sekretariat'],
-  harmonogram: ['harmonogarm', 'harmonogram', 'plan zajęć', 'plan zajec', 'rozkład'],
+  harmonogram: ['harmonogarm', 'harmonogram', 'plan zajęć', 'plan zajec', 'rozkład', 'plan z', 'harmonogram z'],
   egzamin: ['egzamin', 'egzaminy', 'kolokwium', 'zaliczeń', 'zaliczenia'],
   praktyki: ['praksy', 'praktyki', 'staż', 'staz', 'praktyka', 'praktyk'],
   erasmus: ['erasmus', 'wymiana', 'wyjazd zagraniczny'],
@@ -106,17 +106,24 @@ export function classifyQuery(
     faculty_detection_confidence = 0.70;
   }
 
-  // ── Program detection (for faculties like WNoZK that need clarification) ──
-  let detected_program: string | null = null;
-  if (faculty_id && FACULTY_PROGRAMS[faculty_id]) {
-    const programs = FACULTY_PROGRAMS[faculty_id];
-    for (const prog of programs) {
-      if (prog.keywords.some(k => q.includes(k))) {
-        detected_program = prog.id;
-        break;
-      }
-    }
-  }
+   // ── Program detection (for faculties like WNoZK that need clarification) ──
+   // IMPORTANT: Try to detect program even if faculty not detected.
+   // This handles cases like "harmonogram fizjoterapii?" (program without explicit faculty mention).
+   let detected_program: string | null = null;
+   for (const [fid, programs] of Object.entries(FACULTY_PROGRAMS)) {
+     for (const prog of programs) {
+       if (prog.keywords.some(k => q.includes(k))) {
+         detected_program = prog.id;
+         // If program is detected from a faculty but faculty wasn't explicitly mentioned, infer it
+         if (!faculty_id && fid === 'wnozk') {
+           faculty_id = fid;
+           faculty_detection_confidence = 0.85;  // High confidence from program keyword
+         }
+         break;
+       }
+     }
+     if (detected_program) break;
+   }
 
   // ── Scope determination ──
   const isGeneralTopic = GENERAL_TOPICS.some(t => q.includes(t));

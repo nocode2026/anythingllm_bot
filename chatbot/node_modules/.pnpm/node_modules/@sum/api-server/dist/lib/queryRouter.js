@@ -29,7 +29,7 @@ exports.FACULTIES = {
 exports.FACULTY_PROGRAMS = {
     wnozk: [
         { id: 'pielegniarstwo', name: 'Pielęgniarstwo', keywords: ['pielęgniarstwo', 'pielegniarstwo', 'pielęgniarstwa', 'pielegniarstwa'] },
-        { id: 'fizjoterapia', name: 'Fizjoterapia', keywords: ['fizjoterapia'] },
+        { id: 'fizjoterapia', name: 'Fizjoterapia', keywords: ['fizjoterapia', 'fizjoterapii'] },
         { id: 'poloznictwo', name: 'Położnictwo', keywords: ['położnictwo', 'poloznictwo', 'położnictwa', 'poloznictwa'] },
         { id: 'elektroradiologia', name: 'Elektroradiologia', keywords: ['elektroradiologia'] },
     ],
@@ -44,7 +44,7 @@ exports.GENERAL_TOPICS = [
 exports.TOPIC_ALIASES = {
     stypendium: ['stypendium', 'stypa', 'stypendium rektora', 'stypendium socjalne', 'stypendium ministra'],
     dziekanat: ['dzikanat', 'dziekanat', 'dziekanatu', 'sekretariat'],
-    harmonogram: ['harmonogarm', 'harmonogram', 'plan zajęć', 'plan zajec', 'rozkład'],
+    harmonogram: ['harmonogarm', 'harmonogram', 'plan zajęć', 'plan zajec', 'rozkład', 'plan z', 'harmonogram z'],
     egzamin: ['egzamin', 'egzaminy', 'kolokwium', 'zaliczeń', 'zaliczenia'],
     praktyki: ['praksy', 'praktyki', 'staż', 'staz', 'praktyka', 'praktyk'],
     erasmus: ['erasmus', 'wymiana', 'wyjazd zagraniczny'],
@@ -85,15 +85,23 @@ function classifyQuery(query, sessionFacultyContext) {
         faculty_detection_confidence = 0.70;
     }
     // ── Program detection (for faculties like WNoZK that need clarification) ──
+    // IMPORTANT: Try to detect program even if faculty not detected.
+    // This handles cases like "harmonogram fizjoterapii?" (program without explicit faculty mention).
     let detected_program = null;
-    if (faculty_id && exports.FACULTY_PROGRAMS[faculty_id]) {
-        const programs = exports.FACULTY_PROGRAMS[faculty_id];
+    for (const [fid, programs] of Object.entries(exports.FACULTY_PROGRAMS)) {
         for (const prog of programs) {
             if (prog.keywords.some(k => q.includes(k))) {
                 detected_program = prog.id;
+                // If program is detected from a faculty but faculty wasn't explicitly mentioned, infer it
+                if (!faculty_id && fid === 'wnozk') {
+                    faculty_id = fid;
+                    faculty_detection_confidence = 0.85; // High confidence from program keyword
+                }
                 break;
             }
         }
+        if (detected_program)
+            break;
     }
     // ── Scope determination ──
     const isGeneralTopic = exports.GENERAL_TOPICS.some(t => q.includes(t));
