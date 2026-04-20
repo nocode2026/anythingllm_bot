@@ -32,8 +32,8 @@ const INSURANCE_VARIANTS: Array<{
     id: 'zdrowotne',
     label: 'Ubezpieczenie zdrowotne',
     keywords: ['zdrowotne', 'zdrowotny', 'nfz', 'skladka zdrowotna'],
-    intro: 'Ubezpieczenie zdrowotne dotyczy prawa do świadczeń medycznych. Zwykle kluczowe jest: kto może zostać zgłoszony, od kiedy działa zgłoszenie i jakie dokumenty są potrzebne.',
-    nextStep: 'Jeśli chcesz zgłosić się przez uczelnię, pierwszym krokiem jest złożenie wniosku o objęcie ubezpieczeniem zdrowotnym w NFZ.',
+    intro: 'Ubezpieczenie zdrowotne gwarantuje Ci dostęp do świadczeń medycznych NFZ. Aby się rejestrować się przez Uczelnię, musisz być zarejestowany w PESEL, być studentem i mieć ważną legitymację. Uczela zgłasza Cię zbiorowo do NFZ — o tym decyduje Twój stan na dacie zgłoszenia. Jeśli chcesz, żeby Uczela zgłosiła Cię do ubezpieczenia, musisz złożyć wniosek do NFZ z pieczęcią Uczelni — formularz jest dostępny w dziekanacie.',
+    nextStep: 'Pierwszym krokiem jest złożenie wniosku w dziekanacie Twojego wydziału lub bezpośrednio w NFZ z potwierdzeniem z Uczelni.',
     detailsLinkLabel: 'Wniosek o objęcie ubezpieczeniem zdrowotnym (NFZ)',
     detailsLinkUrl: 'https://student.sum.edu.pl/wp-content/uploads/2026/02/Wniosek_ubezp_zdrowotne_NFZ.pdf',
   },
@@ -404,11 +404,17 @@ chatRouter.post('/message', async (req, res) => {
   if (isGeneralUbezpieczenie && insuranceVariantId) {
     const variant = INSURANCE_VARIANTS.find((v) => v.id === insuranceVariantId);
     if (variant) {
-      answer.answer_text = `${variant.intro} ${variant.nextStep} Jeśli chcesz więcej, sprawdź: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
-      answer.response_type = 'answer';
+      // Don't replace the answer – let the model generate from retrieval, then append practical steps
+      if (answer.response_type === 'answer' && answer.answer_text) {
+        // Model generated real content from retrieval – append next step and link
+        answer.answer_text = `${answer.answer_text}\n\n${variant.nextStep} Możesz też sprawdzić: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
+      } else {
+        // Model didn't generate well – use template
+        answer.answer_text = `${variant.intro}\n\n${variant.nextStep} Jeśli chcesz więcej szczegółów, sprawdź: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
+        answer.response_type = 'answer';
+      }
       answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.85);
       answer.clarification_question = null;
-      autoComposedAnswer = true;
     }
   }
 
