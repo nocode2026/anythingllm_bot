@@ -2,23 +2,42 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import styles from './ChatWidget.module.css';
 
 const FACULTIES = [
-  { id: 'wnmz', label: 'Wydział Nauk Medycznych w Zabrzu' },
-  { id: 'wnmk', label: 'Wydział Nauk Medycznych w Katowicach' },
-  { id: 'wnozk', label: 'Wydział Nauk o Zdrowiu w Katowicach' },
-  { id: 'wnf', label: 'Wydział Nauk Farmaceutycznych w Sosnowcu' },
-  { id: 'wzpb', label: 'Wydział Zdrowia Publicznego w Bytomiu' },
-  { id: 'fbb', label: 'Filia w Bielsku-Białej' },
+  { id: 'wnmz', label: 'WNMZ' },
+  { id: 'wnmk', label: 'WNMK' },
+  { id: 'wnozk', label: 'WNOZK' },
+  { id: 'wnf', label: 'WNFS' },
+  { id: 'wzpb', label: 'WZPB' },
+  { id: 'fbb', label: 'FBB' },
 ];
 
-const QUICK_ACTIONS = [
+const FACULTY_SHORT_LABELS: Record<string, string> = {
+  general: 'OGÓLNE',
+  wnmz: 'WNMZ',
+  wnmk: 'WNMK',
+  wnozk: 'WNOZK',
+  wnf: 'WNFS',
+  wzpb: 'WZPB',
+  fbb: 'FBB',
+};
+
+const GENERAL_QUICK_ACTIONS = [
   { label: 'Dziekanat', query: 'Godziny i kontakt dziekanatu' },
   { label: 'Stypendia', query: 'Jakie stypendia mogę otrzymać?' },
   { label: 'Praktyki', query: 'Informacje o praktykach zawodowych' },
   { label: 'Erasmus', query: 'Jak wziąć udział w programie Erasmus?' },
-  { label: 'Harmonogram', query: 'Harmonogram zajęć i egzaminów' },
-  { label: 'Dokumenty', query: 'Jakie dokumenty są potrzebne?' },
+  { label: 'Opłaty', query: 'Opłaty za studia i terminy płatności' },
+  { label: 'Dokumenty', query: 'Jakie dokumenty są potrzebne do spraw studenckich?' },
   { label: 'Legitymacja', query: 'Jak uzyskać legitymację studencką?' },
   { label: 'Ubezpieczenie', query: 'Ubezpieczenie studentów' },
+];
+
+const FACULTY_QUICK_ACTIONS = [
+  { label: 'Dziekanat', query: 'Kontakt i godziny dziekanatu' },
+  { label: 'Harmonogram', query: 'Harmonogram zajęć i egzaminów' },
+  { label: 'Praktyki', query: 'Informacje o praktykach zawodowych' },
+  { label: 'Dokumenty', query: 'Dokumenty do pobrania dla studentów' },
+  { label: 'Regulaminy', query: 'Najważniejsze regulaminy i zasady studiowania' },
+  { label: 'Kontakt', query: 'Gdzie i jak załatwić sprawy studenckie' },
 ];
 
 interface Source {
@@ -53,12 +72,84 @@ interface Props {
   theme: 'light' | 'dark';
 }
 
+function renderInlineMarkup(text: string, keyPrefix: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const tokenRegex = /(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let tokenIndex = 0;
+
+  while ((match = tokenRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    const boldMatch = token.match(/^\*\*([^*]+)\*\*$/);
+
+    if (linkMatch) {
+      parts.push(
+        <a
+          key={`${keyPrefix}_link_${tokenIndex}`}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.inlineLink}
+        >
+          {linkMatch[1]}
+        </a>
+      );
+    } else if (boldMatch) {
+      parts.push(
+        <strong key={`${keyPrefix}_strong_${tokenIndex}`}>{boldMatch[1]}</strong>
+      );
+    } else {
+      parts.push(token);
+    }
+
+    lastIndex = match.index + token.length;
+    tokenIndex += 1;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
+}
+
+function renderMessageContent(text: string, messageId: string): React.ReactNode {
+  const blocks = text.split(/\n\n+/).filter(Boolean);
+  return blocks.map((block, blockIndex) => {
+    const trimmed = block.trim();
+    const listMatch = trimmed.match(/^\d+\.\s+/m);
+
+    if (listMatch) {
+      const lines = trimmed.split('\n').filter(Boolean);
+      return (
+        <div key={`${messageId}_block_${blockIndex}`} className={styles.messageBlock}>
+          {lines.map((line, lineIndex) => (
+            <div key={`${messageId}_line_${blockIndex}_${lineIndex}`} className={styles.messageLine}>
+              {renderInlineMarkup(line, `${messageId}_${blockIndex}_${lineIndex}`)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <p key={`${messageId}_block_${blockIndex}`} className={styles.messageText}>
+        {renderInlineMarkup(trimmed, `${messageId}_${blockIndex}`)}
+      </p>
+    );
+  });
+}
+
 export function ChatWidget({ apiUrl, theme }: Props) {
   const [open, setOpen] = useState(false);
-  const [faculty, setFaculty] = useState<string | null>(() =>
-    localStorage.getItem('sum_faculty')
-  );
-  const [onboarding, setOnboarding] = useState(!localStorage.getItem('sum_faculty'));
+  const [faculty, setFaculty] = useState<string | null>(null);
+  const [onboarding, setOnboarding] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -72,8 +163,8 @@ export function ChatWidget({ apiUrl, theme }: Props) {
 
   const selectFaculty = (fid: string) => {
     setFaculty(fid);
-    localStorage.setItem('sum_faculty', fid);
     setOnboarding(false);
+    setSessionId(null);
     setMessages([{
       id: 'welcome',
       role: 'assistant',
@@ -96,14 +187,14 @@ export function ChatWidget({ apiUrl, theme }: Props) {
     setLoading(true);
 
     try {
+      const payload: Record<string, string> = { message: text };
+      if (sessionId) payload.session_id = sessionId;
+      if (faculty && faculty !== 'general') payload.faculty_override = faculty;
+
       const res = await fetch(`${apiUrl}/api/chat/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          session_id: sessionId,
-          faculty_override: faculty,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -136,9 +227,28 @@ export function ChatWidget({ apiUrl, theme }: Props) {
   }, [apiUrl, faculty, sessionId, loading]);
 
   const changeFaculty = () => {
+    setFaculty(null);
     setOnboarding(true);
     setSessionId(null);
     setMessages([]);
+    setInput('');
+  };
+
+  const resetChat = async () => {
+    const oldSessionId = sessionId;
+    setSessionId(null);
+    if (oldSessionId) {
+      try {
+        await fetch(`${apiUrl}/api/chat/session/${oldSessionId}`, { method: 'DELETE' });
+      } catch {
+        // Ignore reset errors and reset locally anyway.
+      }
+    }
+
+    setFaculty(null);
+    setOnboarding(true);
+    setMessages([]);
+    setInput('');
   };
 
   const confidence = (c?: number) => {
@@ -148,7 +258,8 @@ export function ChatWidget({ apiUrl, theme }: Props) {
     return 'low';
   };
 
-  const selectedFacultyLabel = FACULTIES.find(f => f.id === faculty)?.label;
+  const selectedFacultyLabel = FACULTY_SHORT_LABELS[faculty ?? 'general'] ?? 'SUM';
+  const quickActions = faculty === 'general' ? GENERAL_QUICK_ACTIONS : FACULTY_QUICK_ACTIONS;
 
   return (
     <div className={`${styles.root} ${styles[theme]}`} data-sum-chatbot>
@@ -170,8 +281,13 @@ export function ChatWidget({ apiUrl, theme }: Props) {
             </div>
             <div className={styles.headerActions}>
               {faculty && (
-                <button className={styles.facultyBtn} onClick={changeFaculty} title="Zmien wydzial">
-                  {selectedFacultyLabel?.split(' ').slice(0, 3).join(' ')}
+                <button className={styles.facultyBtn} onClick={changeFaculty} title="Zmien wydzial lub tryb">
+                  {selectedFacultyLabel}
+                </button>
+              )}
+              {!onboarding && (
+                <button className={styles.resetBtn} onClick={resetChat} title="Reset czatu" aria-label="Reset czatu">
+                  ↺
                 </button>
               )}
               <button className={styles.closeBtn} onClick={() => setOpen(false)} aria-label="Zamknij">×</button>
@@ -181,15 +297,15 @@ export function ChatWidget({ apiUrl, theme }: Props) {
           {/* Onboarding */}
           {onboarding && (
             <div className={styles.onboarding}>
-              <p className={styles.onboardingTitle}>Wybierz swoj wydzial lub filię:</p>
+              <p className={styles.onboardingTitle}>Wybierz tryb: wydział albo ogólne pytania</p>
+              <button className={styles.facultyChoice} onClick={() => selectFaculty('general')}>
+                Ogólne pytania (strona główna)
+              </button>
               {FACULTIES.map(f => (
                 <button key={f.id} className={styles.facultyChoice} onClick={() => selectFaculty(f.id)}>
                   {f.label}
                 </button>
               ))}
-              <button className={styles.facultyChoice} onClick={() => selectFaculty('')}>
-                Pytanie ogolne (bez wydzialu)
-              </button>
             </div>
           )}
 
@@ -197,10 +313,12 @@ export function ChatWidget({ apiUrl, theme }: Props) {
           {!onboarding && (
             <>
               <div className={styles.messages}>
-                {messages.map(msg => (
+                {messages.map(msg => {
+                  const showAuxiliarySections = msg.response_type !== 'answer';
+                  return (
                   <div key={msg.id} className={`${styles.message} ${styles[msg.role]}`}>
                     <div className={styles.bubble}>
-                      <p className={styles.messageText}>{msg.content}</p>
+                      {renderMessageContent(msg.content, msg.id)}
 
                       {/* Confidence note */}
                       {msg.confidence_note && (
@@ -210,7 +328,7 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                       )}
 
                       {/* Sources */}
-                      {msg.sources && msg.sources.length > 0 && (
+                      {showAuxiliarySections && msg.sources && msg.sources.length > 0 && (
                         <div className={styles.sources}>
                           <span className={styles.sourcesLabel}>Zrodla:</span>
                           <div className={styles.actionRow}>
@@ -223,7 +341,7 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                         </div>
                       )}
 
-                      {msg.action_buttons && msg.action_buttons.length > 0 && (
+                      {showAuxiliarySections && msg.action_buttons && msg.action_buttons.length > 0 && (
                         <div className={styles.sources}>
                           <span className={styles.sourcesLabel}>Przejdz od razu:</span>
                           <div className={styles.actionRow}>
@@ -254,9 +372,8 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                       )}
 
                       {/* Suggested follow-up questions */}
-                      {msg.suggested_questions && msg.suggested_questions.length > 0 && (
+                      {showAuxiliarySections && msg.suggested_questions && msg.suggested_questions.length > 0 && (
                         <div className={styles.sources}>
-                          <span className={styles.sourcesLabel}>Mozesz tez zapytac:</span>
                           <div className={styles.actionRow}>
                             {msg.suggested_questions.map((q, i) => (
                               <button
@@ -277,7 +394,8 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                       </span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
 
                 {loading && (
                   <div className={`${styles.message} ${styles.assistant}`}>
@@ -292,7 +410,7 @@ export function ChatWidget({ apiUrl, theme }: Props) {
               {/* Quick actions */}
               {messages.length <= 1 && (
                 <div className={styles.quickActions}>
-                  {QUICK_ACTIONS.map(a => (
+                  {quickActions.map(a => (
                     <button key={a.label} className={styles.quickBtn} onClick={() => sendMessage(a.query)}>
                       {a.label}
                     </button>

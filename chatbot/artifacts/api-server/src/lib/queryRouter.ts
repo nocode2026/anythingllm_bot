@@ -13,7 +13,7 @@ export const FACULTIES: Record<string, string[]> = {
   wnozk: ['zdrowie katowice', 'wnozk', 'nauk o zdrowiu', 'zdrowiu w katowicach', 'zdrowiu katowice',
            'pielęgniarstwo katowice', 'nauk zdrowiu'],
   // Faculty of Pharmaceutical Sciences in Sosnowiec (WNF)
-  wnf: ['farmacja', 'wnf', 'farmaceutycznych', 'sosnowiec', 'farmacja sosnowiec',
+  wnf: ['farmacja', 'wnf', 'wnfs', 'farmaceutycznych', 'sosnowiec', 'farmacja sosnowiec',
          'nauk farmaceutycznych', 'wydział farmacji'],
   // Public Health in Bytom (WZPB) - if indexed
   wzpb: ['bytom', 'wzpb', 'zdrowia publicznego', 'zdrowie publiczne bytom'],
@@ -41,7 +41,7 @@ export const GENERAL_TOPICS = [
 ];
 
 export const TOPIC_ALIASES: Record<string, string[]> = {
-  stypendium: ['stypendium', 'stypa', 'stypendium rektora', 'stypendium socjalne', 'stypendium ministra'],
+  stypendium: ['stypendium', 'stypendia', 'stypa', 'stypendium rektora', 'stypendium socjalne', 'stypendium ministra'],
   dziekanat: ['dzikanat', 'dziekanat', 'dziekanatu', 'sekretariat'],
   harmonogram: ['harmonogarm', 'harmonogram', 'plan zajęć', 'plan zajec', 'rozkład', 'plan z', 'harmonogram z'],
   egzamin: ['egzamin', 'egzaminy', 'kolokwium', 'zaliczeń', 'zaliczenia'],
@@ -49,7 +49,7 @@ export const TOPIC_ALIASES: Record<string, string[]> = {
   erasmus: ['erasmus', 'wymiana', 'wyjazd zagraniczny'],
   akademik: ['akademik', 'dom studenta', 'bursa'],
   legitymacja: ['legitymacja', 'mlegitymacja', 'karta studenta'],
-  ubezpieczenie: ['ubezpieczenie', 'ubezpieczenia'],
+  ubezpieczenie: ['ubezpieczenie', 'ubezpieczenia', 'zdrowotne', 'nnw', 'oc'],
   kontakt: ['kontakt', 'telefon', 'email', 'adres', 'godziny pracy', 'godziny przyjęć'],
 };
 
@@ -70,7 +70,7 @@ const FOLLOW_UP_PATTERNS = [
   /^(a|i) (gdzie|kontakt|adres|telefon|email|kiedy|do kiedy|link|strona|więcej|jak|dlaczego|ile|co jeszcze)/i,
   /^(gdzie|kontakt|kiedy|ile|jak|dlaczego|co jeszcze|strona|link)\?*$/i,
   /^(a to|i to|to gdzie|to kiedy|to jak)\b/i,
-  /^(zabrze|katowice|sosnowiec|bytom|bielsko(-biała)?|wnmz|wnmk|wnozk|wnf|wzpb|fbb)\?*$/i,
+  /^(zabrze|katowice|sosnowiec|bytom|bielsko(-biała)?|wnmz|wnmk|wnozk|wnf|wnfs|wzpb|fbb)\?*$/i,
 ];
 
 export function classifyQuery(

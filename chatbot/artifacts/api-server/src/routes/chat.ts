@@ -316,20 +316,24 @@ chatRouter.post('/message', async (req, res) => {
     !classification.is_follow_up &&
     classification.faculty_detection_confidence < 0.65
   ) {
+    const topicLabel = classification.topic_tags.includes('harmonogram')
+      ? 'harmonogram'
+      : classification.topic_tags.join(', ');
     // User is asking about a faculty-specific topic but hasn't specified which faculty
     return res.json({
       session_id: session.id,
-      answer: `Pytasz o ${classification.topic_tags.join(', ')}. Który dziekanat Cię interesuje?`,
+      answer: `Pytasz o ${topicLabel}. Który wydział Cię interesuje?`,
       response_type: 'clarification',
       sources: [],
       final_answer_confidence: 0,
-      clarification_question: 'Wybrań dziekanat:',
+      clarification_question: 'Wybierz wydział:',
       suggested_questions: [
-        'Medycyna - Zabrze',
-        'Medycyna - Katowice',
-        'Nauki o Zdrowiu - Katowice',
-        'Farmacja - Sosnowiec',
-        'Filia - Bielsko-Biała',
+        'WNMZ',
+        'WNMK',
+        'WNOZK',
+        'WNFS',
+        'WZPB',
+        'FBB',
       ],
     });
   }
