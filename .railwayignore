@@ -1,0 +1,13 @@
+chatbot/chat-widget
+chatbot/admin-panel
+storage
+sync
+.git
+.env
+.env.example
+node_modules
+*.md
+*.sh
+*.bat
+*.ps1
+docker-compose.yml
