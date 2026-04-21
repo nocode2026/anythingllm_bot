@@ -2,7 +2,7 @@ services:
   - type: web
     name: sum-chatbot-api
     runtime: node
-    buildCommand: "cd chatbot && pnpm install && pnpm --filter @sum/api-server build"
+    buildCommand: "npm install -g pnpm && cd chatbot && pnpm install && pnpm --filter @sum/api-server build"
     startCommand: "cd chatbot/artifacts/api-server && node dist/app.js"
     plan: standard
     envVars:

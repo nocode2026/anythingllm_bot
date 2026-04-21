@@ -1,0 +1,9 @@
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+cmds = ["corepack enable && corepack prepare pnpm@latest --activate"]
+
+[phases.build]
+cmds = ["cd chatbot && pnpm install && pnpm --filter @sum/api-server build"]
+
+[start]
+cmd = "cd chatbot/artifacts/api-server && node dist/app.js"
