@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "chatbot/artifacts/api-server/package.json",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "chatbot/chat-widget/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "chatbot/artifacts/api-server/dist/app.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "chatbot/chat-widget/dist/$1"
+    }
+  ],
+  "env": {
+    "PORT": "3100",
+    "ANYTHINGLLM_BASE_URL": "@anythingllm_base_url",
+    "ANYTHINGLLM_API_KEY": "@anythingllm_api_key",
+    "OPENAI_API_KEY": "@openai_api_key",
+    "DATABASE_URL": "@database_url",
+    "ALLOWED_ORIGINS": "@allowed_origins"
+  }
+}

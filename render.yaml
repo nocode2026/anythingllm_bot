@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: sum-chatbot-api
+    runtime: node
+    buildCommand: "cd chatbot && pnpm install && pnpm --filter @sum/api-server build"
+    startCommand: "cd chatbot/artifacts/api-server && node dist/app.js"
+    plan: standard
+    envVars:
+      - key: PORT
+        value: "3100"
+      - key: NODE_ENV
+        value: production
+      - key: ANYTHINGLLM_BASE_URL
+        fromDatabase:
+          name: anythingllm_base_url
+      - key: ANYTHINGLLM_API_KEY
+        fromDatabase:
+          name: anythingllm_api_key
+      - key: OPENAI_API_KEY
+        fromDatabase:
+          name: openai_api_key
+      - key: DATABASE_URL
+        fromDatabase:
+          name: database_url
+      - key: ALLOWED_ORIGINS
+        value: "https://sum-chatbot-widget.onrender.com,https://your-widget-domain.com"
+
+  - type: static
+    name: sum-chatbot-widget
+    staticPublishPath: ./dist
+    buildCommand: "cd chatbot && pnpm install && pnpm --filter @sum/chat-widget build"
+    routes:
+      - path: /api/*
+        destination: https://sum-chatbot-api.onrender.com:$PORT/api
+      - path: /*
+        destination: /index.html
+
+databases:
+  - name: sum-chatbot-db
+    engine: postgresql
+    version: "15"
+    plan: standard
