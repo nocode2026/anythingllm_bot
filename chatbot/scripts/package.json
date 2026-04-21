@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "audit:coverage": "tsx src/audit/facultyCoverage.ts",
+    "audit:wp-coverage": "tsx src/audit/wordpressCoverage.ts",
     "audit:wordpress": "tsx src/audit/wordpressFacultyAudit.ts",
     "ingest": "tsx src/ingestion/run.ts",
     "ingest:mock": "MOCK_MODE=true tsx src/ingestion/run.ts",

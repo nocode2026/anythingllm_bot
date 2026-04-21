@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 const MOCK_MODE = process.env.MOCK_MODE === 'true';
 const BATCH_SIZE = parseInt(process.env.INGEST_BATCH_SIZE ?? '10', 10);
 const WP_BASE = process.env.WP_BASE_URL ?? 'https://student.sum.edu.pl/wp-json/wp/v2';
+const FORCE_REINDEX = process.argv.includes('--reindex');
 
 // ── Mock data for dev without WP access ──────────────────────────────────────
 const MOCK_PAGES = [
@@ -105,7 +106,6 @@ type WPPage = {
 
 async function ingestPage(page: WPPage, jobId: string): Promise<number> {
   const text = normalizeHtml(page.content.rendered);
-  if (text.length < 50) return 0;
 
   const title = page.title.rendered.replace(/<[^>]+>/g, '').trim();
   const cls = classify(page.link, title, text);
@@ -119,19 +119,15 @@ async function ingestPage(page: WPPage, jobId: string): Promise<number> {
     [page.link]
   );
 
-  if (existing.rows.length > 0) {
+  if (!FORCE_REINDEX && existing.rows.length > 0) {
     const existingMetadata = existing.rows[0].metadata as { modified?: string } | null;
     if (existingMetadata?.modified === modifiedAt) {
-      // Skip if unchanged, UNLESS it's the insurance page (which needs full re-index due to Elementor complexity)
-      if (!page.link.includes('ubezpieczenie')) {
-        await pool.query(
-          `UPDATE ingestion_progress SET processed_pages = processed_pages + 1, last_cursor = $2 WHERE job_id = $1`,
-          [jobId, page.slug]
-        );
-        console.log(`  ↷ ${page.slug} (unchanged)`);
-        return 0;
-      }
-      // For insurance page: continue to re-index even if metadata says unchanged
+      await pool.query(
+        `UPDATE ingestion_progress SET processed_pages = processed_pages + 1, last_cursor = $2 WHERE job_id = $1`,
+        [jobId, page.slug]
+      );
+      console.log(`  ↷ ${page.slug} (unchanged)`);
+      return 0;
     }
   }
 
@@ -200,6 +196,7 @@ async function ingestPage(page: WPPage, jobId: string): Promise<number> {
 async function main(): Promise<void> {
   console.log('[Ingest] Starting ingestion pipeline...');
   console.log(`[Ingest] Mode: ${MOCK_MODE ? 'MOCK' : 'LIVE (WordPress REST API)'}`);
+  console.log(`[Ingest] Reindex: ${FORCE_REINDEX ? 'FORCED (all pages)' : 'incremental (modified only)'}`);
 
   const jobId = uuidv4();
   await pool.query(
