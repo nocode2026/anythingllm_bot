@@ -16,7 +16,6 @@ import { buildActionButtons } from '../lib/actionButtons';
 export const chatRouter = Router();
 
 const INSURANCE_PAGE_URL = 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/';
-const DOMY_STUDENTA_URL = 'https://student.sum.edu.pl/domy-studenta/';
 const WP_API_BASE = process.env.WP_BASE_URL ?? 'https://student.sum.edu.pl/wp-json/wp/v2';
 
 interface WpSummaryItem {
@@ -657,8 +656,6 @@ chatRouter.post('/message', async (req, res) => {
     resolvedScope === 'general' && resolvedTopicTags.includes('stypendium');
   const isGeneralPraktyki =
     resolvedScope === 'general' && resolvedTopicTags.includes('praktyki');
-  const isGeneralAkademik =
-    resolvedScope === 'general' && resolvedTopicTags.includes('akademik');
   const isGeneralUbezpieczenie =
     resolvedScope === 'general' && resolvedTopicTags.includes('ubezpieczenie');
   const wantsSource = userExplicitlyWantsSource(message);
@@ -690,23 +687,6 @@ chatRouter.post('/message', async (req, res) => {
       'Praktyki zawodowe zwykle wymagają sprawdzenia czterech rzeczy: zasad zaliczenia, wymaganych dokumentów, terminów oraz miejsca odbywania praktyk. Szczegóły mogą zależeć od kierunku i wydziału. Jeśli chcesz, mogę doprecyzować to dla Twojego wydziału albo rozpisać, od czego zacząć.';
     answer.response_type = 'answer';
     answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.75);
-    answer.clarification_question = null;
-    autoComposedAnswer = true;
-  }
-
-  if (isGeneralAkademik) {
-    const akademikButtons = await buildActionButtons({
-      topicTags: ['akademik'],
-      scope: 'general',
-      facultyId: null,
-      responseType: 'answer',
-      sourceUrls: [],
-    });
-    const dynamicUrl = akademikButtons.find((button) => button.kind === 'link' && button.url)?.url ?? DOMY_STUDENTA_URL;
-    const dynamicSummary = await buildDynamicPageSummaryFromUrl(dynamicUrl);
-    answer.answer_text = dynamicSummary ?? `Temat akademików na SUM jest opisany na stronie ogólnej Domy Studenta.\n\nWięcej informacji znajdziesz na stronie: [DOMY STUDENTA](${dynamicUrl}).`;
-    answer.response_type = 'answer';
-    answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.9);
     answer.clarification_question = null;
     autoComposedAnswer = true;
   }
@@ -751,6 +731,25 @@ chatRouter.post('/message', async (req, res) => {
     responseType: answer.response_type,
     sourceUrls: answer.sources.map((source) => source.url),
   });
+
+  if (
+    resolvedScope === 'general' &&
+    actionButtons.length > 0 &&
+    (wantsSource || answer.response_type === 'fallback')
+  ) {
+    const firstDynamicLink = actionButtons.find((button) => button.kind === 'link' && button.url)?.url;
+    if (firstDynamicLink) {
+      const dynamicSummary = await buildDynamicPageSummaryFromUrl(firstDynamicLink);
+      if (dynamicSummary) {
+        answer.answer_text = dynamicSummary;
+        answer.response_type = 'answer';
+        answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.88);
+        answer.clarification_question = null;
+        answer.sources = [];
+        autoComposedAnswer = true;
+      }
+    }
+  }
 
   if (
     answer.response_type === 'fallback' &&
