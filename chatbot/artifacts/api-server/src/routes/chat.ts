@@ -16,6 +16,7 @@ import { buildActionButtons } from '../lib/actionButtons';
 export const chatRouter = Router();
 
 const INSURANCE_PAGE_URL = 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/';
+const DOMY_STUDENTA_URL = 'https://student.sum.edu.pl/domy-studenta/';
 
 type InsuranceVariantId = 'zdrowotne' | 'nnw' | 'oc';
 
@@ -327,9 +328,9 @@ chatRouter.post('/message', async (req, res) => {
     });
   }
 
-  // Faculty clarification: If asking about faculty-specific topic but no faculty specified, ask which one
-  // Faculty-specific topics: dziekanat, harmonogram, egzamin, praktyki, kontakt, akademik (for specific faculty)
-  const FACULTY_SPECIFIC_TOPICS = ['dziekanat', 'harmonogram', 'egzamin', 'praktyki', 'kontakt', 'akademik'];
+  // Faculty clarification: If asking about faculty-specific topic but no faculty specified, ask which one.
+  // NOTE: "akademik" is intentionally excluded because it is a general topic on SUM.
+  const FACULTY_SPECIFIC_TOPICS = ['dziekanat', 'harmonogram', 'egzamin', 'praktyki', 'kontakt'];
   const hasFacultySpecificTopic = classification.topic_tags.some(tag => FACULTY_SPECIFIC_TOPICS.includes(tag));
   
   if (
@@ -447,6 +448,8 @@ chatRouter.post('/message', async (req, res) => {
     resolvedScope === 'general' && resolvedTopicTags.includes('stypendium');
   const isGeneralPraktyki =
     resolvedScope === 'general' && resolvedTopicTags.includes('praktyki');
+  const isGeneralAkademik =
+    resolvedScope === 'general' && resolvedTopicTags.includes('akademik');
   const isGeneralUbezpieczenie =
     resolvedScope === 'general' && resolvedTopicTags.includes('ubezpieczenie');
   const wantsSource = userExplicitlyWantsSource(message);
@@ -478,6 +481,15 @@ chatRouter.post('/message', async (req, res) => {
       'Praktyki zawodowe zwykle wymagają sprawdzenia czterech rzeczy: zasad zaliczenia, wymaganych dokumentów, terminów oraz miejsca odbywania praktyk. Szczegóły mogą zależeć od kierunku i wydziału. Jeśli chcesz, mogę doprecyzować to dla Twojego wydziału albo rozpisać, od czego zacząć.';
     answer.response_type = 'answer';
     answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.75);
+    answer.clarification_question = null;
+    autoComposedAnswer = true;
+  }
+
+  if (isGeneralAkademik) {
+    answer.answer_text =
+      'Temat akademików na SUM jest opisany na stronie ogólnej Domy Studenta. Znajdziesz tam najważniejsze informacje o zakwaterowaniu oraz podział na sekcje: Katowice, Zabrze, Sosnowiec oraz Druki i dokumenty.\n\nWięcej informacji znajdziesz na stronie: [DOMY STUDENTA](' + DOMY_STUDENTA_URL + ').';
+    answer.response_type = 'answer';
+    answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.9);
     answer.clarification_question = null;
     autoComposedAnswer = true;
   }

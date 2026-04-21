@@ -210,15 +210,13 @@ function QuickNav({ nav, onSend }: { nav: NavNode[]; onSend: (text: string) => v
             );
           } else if (item.kind === 'link') {
             return (
-              <a
+              <button
                 key={item.label}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
                 className={styles.quickBtn}
+                onClick={() => onSend(`Krótko opisz, co znajdę na stronie "${item.label}", wypisz ewentualne podsekcje i na końcu podaj link: ${item.url}`)}
               >
                 {item.label}
-              </a>
+              </button>
             );
           } else {
             return (
