@@ -20,25 +20,131 @@ const FACULTY_SHORT_LABELS: Record<string, string> = {
   fbb: 'FBB',
 };
 
-const GENERAL_QUICK_ACTIONS = [
-  { label: 'Dziekanat', query: 'Godziny i kontakt dziekanatu' },
-  { label: 'Stypendia', query: 'Jakie stypendia mogę otrzymać?' },
-  { label: 'Praktyki', query: 'Informacje o praktykach zawodowych' },
-  { label: 'Erasmus', query: 'Jak wziąć udział w programie Erasmus?' },
-  { label: 'Opłaty', query: 'Opłaty za studia i terminy płatności' },
-  { label: 'Dokumenty', query: 'Jakie dokumenty są potrzebne do spraw studenckich?' },
-  { label: 'Legitymacja', query: 'Jak uzyskać legitymację studencką?' },
-  { label: 'Ubezpieczenie', query: 'Ubezpieczenie studentów' },
+/* ── Navigation tree ─────────────────────────────────────────────────────────── */
+type NavLeaf =
+  | { label: string; kind: 'link'; url: string }
+  | { label: string; kind: 'query'; query: string };
+type NavGroup = { label: string; kind: 'group'; children: NavLeaf[] };
+type NavNode = NavLeaf | NavGroup;
+
+const GENERAL_NAV: NavNode[] = [
+  {
+    label: 'Szybkie linki', kind: 'group',
+    children: [
+      { label: 'Opłaty za studia', kind: 'link', url: 'https://student.sum.edu.pl/oplaty-za-studia/' },
+      { label: 'Domy studenta', kind: 'link', url: 'https://student.sum.edu.pl/domy-studenta/' },
+      { label: 'Program MosTUM', kind: 'link', url: 'https://student.sum.edu.pl/mostum/' },
+      { label: 'Erasmus+', kind: 'link', url: 'https://student.sum.edu.pl/erasmus/' },
+      { label: 'Welcome Center', kind: 'link', url: 'https://student.sum.edu.pl/welcome-centre-2/' },
+      { label: 'Praktyki studenckie', kind: 'link', url: 'https://student.sum.edu.pl/wyszukiwarka-placowek/' },
+      { label: 'Kliniki SUM', kind: 'link', url: 'https://student.sum.edu.pl/szpitale-kliniczne-sum/' },
+      { label: 'Centra symulacji', kind: 'link', url: 'https://symulacja.sum.edu.pl/' },
+      { label: 'Bazy medyczne', kind: 'link', url: 'https://biblioteka.sum.edu.pl/zasoby/' },
+      { label: 'BHP – Pierwsza pomoc', kind: 'link', url: 'https://bhp.sum.edu.pl/pierwsza-pomoc' },
+      { label: 'Wyjazdy studentów', kind: 'link', url: 'https://student.sum.edu.pl/wyjazdy-studentow/' },
+    ],
+  },
+  {
+    label: 'Organizacje', kind: 'group',
+    children: [
+      { label: 'Samorząd WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/wydzialowa-rada-samorzadu-studenckiego-wnmz-zabrze/' },
+      { label: 'Samorząd WNF', kind: 'link', url: 'https://student.sum.edu.pl/wydzialowa-rada-samorzadu-studenckiego-wnf-sosnowiec/' },
+      { label: 'Samorząd WNMK', kind: 'link', url: 'https://student.sum.edu.pl/wydzialowa-rada-samorzadu-studenckiego-wnmk-katowice/' },
+      { label: 'Samorząd WNOZK', kind: 'link', url: 'https://student.sum.edu.pl/homepage/student-council-of-the-faculty-of-health-sciences-in-katowice-2/' },
+      { label: 'Samorząd WZPB', kind: 'link', url: 'https://student.sum.edu.pl/wydzialowa-rada-samorzadu-studenckiego-wzpb-bytom/' },
+      { label: 'STN', kind: 'link', url: 'https://student.sum.edu.pl/studenckie-towarzystwo-naukowe/' },
+      { label: 'Stowarzyszenia WNF', kind: 'link', url: 'https://student.sum.edu.pl/stowarzyszenie-studenckie-wnf-w-sosnowcu/' },
+      { label: 'Stowarzyszenia WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/stowarzyszenia-studenckie-wnm-w-zabrzu/' },
+      { label: 'Chór SUM', kind: 'link', url: 'https://student.sum.edu.pl/chor-slaskiego-uniwersytetu-medycznego-w-katowicach/' },
+      { label: 'IFMSA', kind: 'link', url: 'https://student.sum.edu.pl/ifmsa/' },
+      { label: 'Teatr Stosowany SUM', kind: 'link', url: 'https://student.sum.edu.pl/teatr-stosowany-sum/' },
+    ],
+  },
+  {
+    label: 'Stypendia i wsparcie finansowe', kind: 'group',
+    children: [
+      { label: 'Stypendium Rektora', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-rektora/' },
+      { label: 'Stypendium Socjalne', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-socjalne/' },
+      { label: 'Stypendium dla niepełnosprawnych', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-dla-niepelnosprawnych/' },
+      { label: 'Zapomogi', kind: 'link', url: 'https://student.sum.edu.pl/zapomogi/' },
+      { label: 'Stypendium Ministra', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-ministra/' },
+      { label: 'Stypendia KPO', kind: 'link', url: 'https://student.sum.edu.pl/stypendia-w-ramach-systemu-zachet-kpo/' },
+      { label: 'Inne stypendia', kind: 'link', url: 'https://student.sum.edu.pl/inne-stypendia/' },
+    ],
+  },
+  {
+    label: 'Dodatkowe świadczenia', kind: 'group',
+    children: [
+      { label: 'Ubezpieczenie studentów i doktorantów', kind: 'link', url: 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/' },
+      { label: 'Wsparcie psychologiczne', kind: 'link', url: 'https://student.sum.edu.pl/wsparcie-psychologiczne/' },
+      { label: 'Domy studenta', kind: 'link', url: 'https://student.sum.edu.pl/domy-studenta/' },
+      { label: 'Biuro Karier SUM', kind: 'link', url: 'https://student.sum.edu.pl/biuro-karier-sum/' },
+    ],
+  },
 ];
 
-const FACULTY_QUICK_ACTIONS = [
-  { label: 'Dziekanat', query: 'Kontakt i godziny dziekanatu' },
-  { label: 'Harmonogram', query: 'Harmonogram zajęć i egzaminów' },
-  { label: 'Praktyki', query: 'Informacje o praktykach zawodowych' },
-  { label: 'Dokumenty', query: 'Dokumenty do pobrania dla studentów' },
-  { label: 'Regulaminy', query: 'Najważniejsze regulaminy i zasady studiowania' },
-  { label: 'Kontakt', query: 'Gdzie i jak załatwić sprawy studenckie' },
-];
+const FACULTY_NAV: Record<string, NavNode[]> = {
+  wnmz: [
+    { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-zajec/' },
+    { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-egzaminow/' },
+    { label: 'Praktyki', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/praktyki/' },
+    { label: 'Dokumenty do pobrania', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/dokumenty-do-pobrania/' },
+    { label: 'Regulaminy', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/wnmz-regulaminy/' },
+    { label: 'Kontakt', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/kontakt/' },
+    { label: 'Opiekunowie roku', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/opiekunowie-roku/' },
+    { label: 'Placówki partnerskie', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/placowki-partnerskie-wnmz/' },
+  ],
+  wnmk: [
+    { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-zajec/' },
+    { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-egzaminow/' },
+    { label: 'Praktyki', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/praktyki/' },
+    { label: 'Dokumenty do pobrania', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/dokumenty-do-pobrania/' },
+    { label: 'Regulaminy', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/regulaminy/' },
+    { label: 'Kontakt', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/kontakt/' },
+    { label: 'Opiekunowie roku', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/opiekunowie-roku/' },
+    { label: 'Placówki partnerskie', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/placowki-partnerskie-wnmk/' },
+  ],
+  wnozk: [
+    { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy/' },
+    { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy-egzaminow/' },
+    { label: 'Praktyki', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/praktyki/' },
+    { label: 'Dokumenty do pobrania', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/dokumenty-do-pobrania/' },
+    { label: 'Regulaminy', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/regulaminy/' },
+    { label: 'Kontakt', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/kontakt/' },
+    { label: 'Opiekunowie roku', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/opiekunowie-roku/' },
+    { label: 'Placówki partnerskie', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/placowki-partnerskie-wnozk/' },
+  ],
+  wnf: [
+    { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-zajec/' },
+    { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-egzaminow/' },
+    { label: 'Praktyki', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/praktyki/' },
+    { label: 'Dokumenty do pobrania', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/dokumenty-do-pobrania/' },
+    { label: 'Regulaminy', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/regulaminy/' },
+    { label: 'Sylabusy', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/sylabusy/' },
+    { label: 'Kontakt', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/kontakt/' },
+    { label: 'Opiekunowie roku', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/opiekunowie-roku/' },
+  ],
+  wzpb: [
+    { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-zajec/' },
+    { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-egzaminow/' },
+    { label: 'Praktyki', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/praktyki/' },
+    { label: 'Dokumenty do pobrania', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/dokumenty-do-pobrania/' },
+    { label: 'Regulaminy', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/regulaminy/' },
+    { label: 'Kontakt', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/kontakt-opiekunowie-roku/' },
+    { label: 'Opiekunowie roku', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/opiekunowie-roku/' },
+    { label: 'Placówki partnerskie', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/placowki-partnerski-wzpb/' },
+  ],
+  fbb: [
+    { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy/' },
+    { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy-egzaminow/' },
+    { label: 'Praktyki', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/praktyki/' },
+    { label: 'Regulaminy', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/regulaminy/' },
+    { label: 'Kontakt', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/kontakt/' },
+    { label: 'Opiekunowie roku', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/opiekunowie-roku/' },
+    { label: 'Placówki partnerskie', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/placowki-partnerskie-fbb/' },
+    { label: 'FAQ', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/fbb_faq_qa/' },
+  ],
+};
 
 interface Source {
   url: string;
@@ -70,6 +176,65 @@ interface Message {
 interface Props {
   apiUrl: string;
   theme: 'light' | 'dark';
+}
+
+/* ── QuickNav: hierarchical navigation panel ──────────────────────────────── */
+function QuickNav({ nav, onSend }: { nav: NavNode[]; onSend: (text: string) => void }) {
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+
+  const currentItems: NavNode[] = activeGroup
+    ? ((nav.find(n => n.kind === 'group' && n.label === activeGroup) as NavGroup | undefined)?.children ?? [])
+    : nav;
+
+  return (
+    <div className={styles.quickNav}>
+      {activeGroup && (
+        <div className={styles.quickNavBreadcrumb}>
+          <button className={styles.backBtn} onClick={() => setActiveGroup(null)}>
+            ← Wróć
+          </button>
+          <span className={styles.quickNavGroupLabel}>{activeGroup}</span>
+        </div>
+      )}
+      <div className={styles.quickNavItems}>
+        {currentItems.map((item) => {
+          if (item.kind === 'group') {
+            return (
+              <button
+                key={item.label}
+                className={`${styles.quickBtn} ${styles.quickBtnGroup}`}
+                onClick={() => setActiveGroup(item.label)}
+              >
+                {item.label} <span className={styles.chevron}>›</span>
+              </button>
+            );
+          } else if (item.kind === 'link') {
+            return (
+              <a
+                key={item.label}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.quickBtn}
+              >
+                {item.label}
+              </a>
+            );
+          } else {
+            return (
+              <button
+                key={item.label}
+                className={styles.quickBtn}
+                onClick={() => onSend((item as { kind: 'query'; query: string }).query)}
+              >
+                {item.label}
+              </button>
+            );
+          }
+        })}
+      </div>
+    </div>
+  );
 }
 
 function renderInlineMarkup(text: string, keyPrefix: string): React.ReactNode[] {
@@ -259,7 +424,7 @@ export function ChatWidget({ apiUrl, theme }: Props) {
   };
 
   const selectedFacultyLabel = FACULTY_SHORT_LABELS[faculty ?? 'general'] ?? 'SUM';
-  const quickActions = faculty === 'general' ? GENERAL_QUICK_ACTIONS : FACULTY_QUICK_ACTIONS;
+  const currentNav: NavNode[] = faculty === 'general' ? GENERAL_NAV : (FACULTY_NAV[faculty ?? ''] ?? []);
 
   return (
     <div className={`${styles.root} ${styles[theme]}`} data-sum-chatbot>
@@ -407,15 +572,9 @@ export function ChatWidget({ apiUrl, theme }: Props) {
                 <div ref={bottomRef} />
               </div>
 
-              {/* Quick actions */}
-              {messages.length <= 1 && (
-                <div className={styles.quickActions}>
-                  {quickActions.map(a => (
-                    <button key={a.label} className={styles.quickBtn} onClick={() => sendMessage(a.query)}>
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
+              {/* Quick navigation */}
+              {messages.length <= 1 && currentNav.length > 0 && (
+                <QuickNav nav={currentNav} onSend={sendMessage} />
               )}
 
               {/* Input */}
