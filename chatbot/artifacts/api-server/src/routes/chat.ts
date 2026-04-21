@@ -17,22 +17,17 @@ export const chatRouter = Router();
 
 const INSURANCE_PAGE_URL = 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/';
 const DOMY_STUDENTA_URL = 'https://student.sum.edu.pl/domy-studenta/';
+const WP_API_BASE = process.env.WP_BASE_URL ?? 'https://student.sum.edu.pl/wp-json/wp/v2';
 
-interface PageSummaryPreset {
-  pattern: RegExp;
-  title: string;
-  summary: string;
-  subsections: string[];
+interface WpSummaryItem {
+  id: number;
+  slug: string;
+  link: string;
+  type: string;
+  title?: { rendered?: string };
+  excerpt?: { rendered?: string };
+  content?: { rendered?: string };
 }
-
-const PAGE_SUMMARY_PRESETS: PageSummaryPreset[] = [
-  {
-    pattern: /student\.sum\.edu\.pl\/domy-studenta\/?/i,
-    title: 'DOMY STUDENTA',
-    summary: 'Na tej stronie znajdziesz najważniejsze informacje o domach studenta SUM: zasady i organizację zakwaterowania oraz informacje praktyczne dla studentów zainteresowanych miejscem w akademiku.',
-    subsections: ['Katowice', 'Zabrze', 'Sosnowiec', 'Druki i dokumenty'],
-  },
-];
 
 type InsuranceVariantId = 'zdrowotne' | 'nnw' | 'oc';
 
@@ -223,18 +218,128 @@ function extractSummaryRequestUrl(message: string): string | null {
   return match ? match[0].trim() : null;
 }
 
-function buildDeterministicPageSummary(message: string): string | null {
+function stripHtmlText(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#8211;|&#8212;/gi, '-')
+    .replace(/&#8217;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractSubsectionsFromHtml(html: string, pageTitle: string): string[] {
+  const headings: string[] = [];
+  const headingRegex = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/gi;
+  let headingMatch: RegExpExecArray | null;
+  while ((headingMatch = headingRegex.exec(html)) !== null) {
+    const text = stripHtmlText(headingMatch[1] ?? '');
+    if (text.length >= 3 && text.length <= 80) headings.push(text);
+  }
+
+  const links: string[] = [];
+  const linkRegex = /<a[^>]*>([\s\S]*?)<\/a>/gi;
+  let linkMatch: RegExpExecArray | null;
+  while ((linkMatch = linkRegex.exec(html)) !== null) {
+    const text = stripHtmlText(linkMatch[1] ?? '');
+    if (text.length >= 3 && text.length <= 60) links.push(text);
+  }
+
+  const stoplist = new Set([
+    'Wsparcie IT', 'Welcome Centre', 'BHP', 'Edukacja zdalna', 'Platforma e-learningowa',
+    'Bazy medyczne', 'Biblioteka SUM', 'Deklaracja dostępności', 'BIP', 'Polityka Prywatności',
+    'Czytaj więcej', 'Przejdź do wszystkich artykułów', pageTitle,
+  ].map((item) => item.toLowerCase()));
+
+  const candidates = [...headings, ...links]
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter((item) => item.length >= 3)
+    .filter((item) => !stoplist.has(item.toLowerCase()));
+
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const item of candidates) {
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+    if (deduped.length >= 8) break;
+  }
+
+  return deduped;
+}
+
+async function fetchWpItemByUrl(targetUrl: string): Promise<WpSummaryItem | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return null;
+  }
+
+  const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/';
+  const slug = normalizedPath.split('/').filter(Boolean).pop();
+  if (!slug) return null;
+
+  const endpoints = ['pages', 'posts', 'placowki'];
+  const fields = '_fields=id,slug,link,type,title,excerpt,content';
+
+  for (const endpoint of endpoints) {
+    const url = `${WP_API_BASE}/${endpoint}?slug=${encodeURIComponent(slug)}&${fields}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const items = await response.json() as WpSummaryItem[];
+      if (!Array.isArray(items) || items.length === 0) continue;
+
+      const byPath = items.find((item) => {
+        try {
+          const itemPath = new URL(item.link).pathname.replace(/\/+$/, '') || '/';
+          return itemPath === normalizedPath;
+        } catch {
+          return false;
+        }
+      });
+
+      return byPath ?? items[0] ?? null;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+async function buildDynamicPageSummaryFromUrl(targetUrl: string): Promise<string | null> {
+  const item = await fetchWpItemByUrl(targetUrl);
+  if (!item) return null;
+
+  const title = stripHtmlText(item.title?.rendered ?? '').trim() || targetUrl;
+  const excerpt = stripHtmlText(item.excerpt?.rendered ?? '').trim();
+  const content = stripHtmlText(item.content?.rendered ?? '').trim();
+  const summarySource = excerpt || content;
+  const summary = summarySource
+    ? summarySource.slice(0, 260).replace(/\s+[\S]*$/, '').trim() + (summarySource.length > 260 ? '...' : '')
+    : `Na tej stronie znajdziesz informacje dotyczące: ${title}.`;
+
+  const rawHtml = `${item.content?.rendered ?? ''}`;
+  const subsections = extractSubsectionsFromHtml(rawHtml, title);
+  const subsectionBlock = subsections.length > 0
+    ? `\n\nPodsekcje na tej stronie:\n${subsections.map((section, index) => `${index + 1}. ${section}`).join('\n')}`
+    : '';
+
+  const finalUrl = item.link || targetUrl;
+  return `${summary}${subsectionBlock}\n\nWięcej informacji znajdziesz na stronie: [${title}](${finalUrl}).`;
+}
+
+async function buildDeterministicPageSummary(message: string): Promise<string | null> {
   const requestedUrl = extractSummaryRequestUrl(message);
   if (!requestedUrl) return null;
-
-  const preset = PAGE_SUMMARY_PRESETS.find((item) => item.pattern.test(requestedUrl));
-  if (!preset) return null;
-
-  const subsections = preset.subsections
-    .map((section, index) => `${index + 1}. ${section}`)
-    .join('\n');
-
-  return `${preset.summary}\n\nPodsekcje na tej stronie:\n${subsections}\n\nWięcej informacji znajdziesz na stronie: [${preset.title}](${requestedUrl}).`;
+  return buildDynamicPageSummaryFromUrl(requestedUrl);
 }
 
 const MessageBodySchema = z.object({
@@ -275,7 +380,7 @@ chatRouter.post('/message', async (req, res) => {
   const classification = classifyQuery(message, effectiveFaculty);
   const insuranceVariantId = detectInsuranceVariant(message);
 
-  const deterministicPageSummary = buildDeterministicPageSummary(message);
+  const deterministicPageSummary = await buildDeterministicPageSummary(message);
   if (deterministicPageSummary) {
     const userMsgId = await saveMessage(session.id, {
       role: 'user',
@@ -590,8 +695,16 @@ chatRouter.post('/message', async (req, res) => {
   }
 
   if (isGeneralAkademik) {
-    answer.answer_text =
-      'Temat akademików na SUM jest opisany na stronie ogólnej Domy Studenta. Znajdziesz tam najważniejsze informacje o zakwaterowaniu oraz podział na sekcje: Katowice, Zabrze, Sosnowiec oraz Druki i dokumenty.\n\nWięcej informacji znajdziesz na stronie: [DOMY STUDENTA](' + DOMY_STUDENTA_URL + ').';
+    const akademikButtons = await buildActionButtons({
+      topicTags: ['akademik'],
+      scope: 'general',
+      facultyId: null,
+      responseType: 'answer',
+      sourceUrls: [],
+    });
+    const dynamicUrl = akademikButtons.find((button) => button.kind === 'link' && button.url)?.url ?? DOMY_STUDENTA_URL;
+    const dynamicSummary = await buildDynamicPageSummaryFromUrl(dynamicUrl);
+    answer.answer_text = dynamicSummary ?? `Temat akademików na SUM jest opisany na stronie ogólnej Domy Studenta.\n\nWięcej informacji znajdziesz na stronie: [DOMY STUDENTA](${dynamicUrl}).`;
     answer.response_type = 'answer';
     answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.9);
     answer.clarification_question = null;
