@@ -219,7 +219,9 @@ function extractSummaryRequestUrl(message: string): string | null {
 
 function stripHtmlText(value: string): string {
   return value
+    .replace(/<wbr\s*\/?>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
     .replace(/<\/p>/gi, '\n\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
@@ -231,45 +233,84 @@ function stripHtmlText(value: string): string {
     .trim();
 }
 
-function extractSubsectionsFromHtml(html: string, pageTitle: string): string[] {
-  const headings: string[] = [];
-  const headingRegex = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/gi;
-  let headingMatch: RegExpExecArray | null;
-  while ((headingMatch = headingRegex.exec(html)) !== null) {
-    const text = stripHtmlText(headingMatch[1] ?? '');
-    if (text.length >= 3 && text.length <= 80) headings.push(text);
-  }
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-  const links: string[] = [];
-  const linkRegex = /<a[^>]*>([\s\S]*?)<\/a>/gi;
-  let linkMatch: RegExpExecArray | null;
-  while ((linkMatch = linkRegex.exec(html)) !== null) {
-    const text = stripHtmlText(linkMatch[1] ?? '');
-    if (text.length >= 3 && text.length <= 60) links.push(text);
-  }
+function normalizeSubsectionLabel(value: string): string {
+  return stripHtmlText(value)
+    .replace(/[\s:,-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  const stoplist = new Set([
-    'Wsparcie IT', 'Welcome Centre', 'BHP', 'Edukacja zdalna', 'Platforma e-learningowa',
-    'Bazy medyczne', 'Biblioteka SUM', 'Deklaracja dostępności', 'BIP', 'Polityka Prywatności',
-    'Czytaj więcej', 'Przejdź do wszystkich artykułów', pageTitle,
-  ].map((item) => item.toLowerCase()));
+function isMeaningfulSubsection(text: string, pageTitle: string, stoplist: Set<string>): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const lower = normalized.toLowerCase();
+  const normalizedPageTitle = pageTitle.toLowerCase().trim();
 
-  const candidates = [...headings, ...links]
-    .map((item) => item.replace(/\s+/g, ' ').trim())
-    .filter((item) => item.length >= 3)
-    .filter((item) => !stoplist.has(item.toLowerCase()));
+  if (normalized.length < 3 || normalized.length > 90) return false;
+  if (stoplist.has(lower)) return false;
+  if (lower === pageTitle.toLowerCase()) return false;
+  if (normalizedPageTitle && lower.startsWith(normalizedPageTitle)) return false;
+  if (/@|https?:\/\/|www\./i.test(normalized)) return false;
+  if (/(^|\s)(rozwi(?:ń|n)|zwi(?:ń|n))($|\s)/i.test(normalized)) return false;
+  if (/\b(tel\.?|telefon|e-mail|email)\b/i.test(normalized)) return false;
+  if (/\b(zakwalifikowani|rezerwow[a-z]*)\b/i.test(normalized)) return false;
+  if (/^\d+[.)\-\s]/.test(normalized)) return false;
+  if ((normalized.match(/\d/g) ?? []).length >= 5) return false;
 
+  return true;
+}
+
+function collectUniqueSubsections(items: string[], limit: number): string[] {
   const deduped: string[] = [];
   const seen = new Set<string>();
-  for (const item of candidates) {
+
+  for (const item of items) {
     const key = item.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(item);
-    if (deduped.length >= 8) break;
+    if (deduped.length >= limit) break;
   }
 
   return deduped;
+}
+
+function extractSubsectionsFromHtml(html: string, pageTitle: string): string[] {
+  const stoplist = new Set([
+    'Wsparcie IT', 'Welcome Centre', 'BHP', 'Edukacja zdalna', 'Platforma e-learningowa',
+    'Bazy medyczne', 'Biblioteka SUM', 'Deklaracja dostępności', 'BIP', 'Polityka Prywatności',
+    'Czytaj więcej', 'Przejdź do wszystkich artykułów', 'Dowiedz się więcej', 'Rozwiń', 'Zwiń',
+    pageTitle,
+  ].map((item) => item.toLowerCase()));
+
+  const accordionLabels: string[] = [];
+  const accordionRegexes = [
+    /<div class="e-n-accordion-item-title-text">([\s\S]*?)<\/div>/gi,
+    /<summary[^>]*class="[^"]*e-n-accordion-item-title[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>[\s\S]*?<\/summary>/gi,
+    /<div[^>]*class="[^"]*elementor-tab-title[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+  ];
+
+  for (const regex of accordionRegexes) {
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(html)) !== null) {
+      const text = normalizeSubsectionLabel(match[1] ?? '');
+      if (!isMeaningfulSubsection(text, pageTitle, stoplist)) continue;
+      accordionLabels.push(text);
+    }
+  }
+
+  const headings: string[] = [];
+  const headingRegex = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/gi;
+  let headingMatch: RegExpExecArray | null;
+  while ((headingMatch = headingRegex.exec(html)) !== null) {
+    const text = normalizeSubsectionLabel(headingMatch[1] ?? '');
+    if (isMeaningfulSubsection(text, pageTitle, stoplist)) headings.push(text);
+  }
+
+  return collectUniqueSubsections([...accordionLabels, ...headings], 10);
 }
 
 async function fetchWpItemByUrl(targetUrl: string): Promise<WpSummaryItem | null> {
