@@ -178,6 +178,28 @@ function detectInsuranceVariant(message: string): InsuranceVariantId | null {
   return null;
 }
 
+function buildRetrievalQuery(
+  message: string,
+  topicTags: string[],
+  facultyId: string | null,
+  isFollowUp: boolean
+): string {
+  if (!isFollowUp) return message;
+
+  const lower = message.toLowerCase();
+  const missingTopics = topicTags.filter((tag) => !lower.includes(tag));
+  const facultyToken = facultyId && !lower.includes(facultyId) ? facultyId : null;
+
+  if (missingTopics.length === 0 && !facultyToken) {
+    return message;
+  }
+
+  return [...missingTopics, facultyToken, message]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
 const MessageBodySchema = z.object({
   message: z.string().min(1).max(2000),
   session_id: z.string().uuid().optional(),
@@ -319,6 +341,15 @@ chatRouter.post('/message', async (req, res) => {
     const topicLabel = classification.topic_tags.includes('harmonogram')
       ? 'harmonogram'
       : classification.topic_tags.join(', ');
+    await updateSession(session.id, {
+      last_resolved_scope: 'faculty',
+      last_resolved_faculty_id: null,
+      last_resolved_topic_tags: classification.topic_tags,
+      last_message_type: 'clarification',
+      last_clarification_reason: 'faculty-selection',
+      last_answer_confidence: 0,
+      last_retrieval_confidence: 0,
+    });
     // User is asking about a faculty-specific topic but hasn't specified which faculty
     return res.json({
       session_id: session.id,
@@ -343,6 +374,15 @@ chatRouter.post('/message', async (req, res) => {
   if (classification.needs_program_clarification) {
     const programs = FACULTY_PROGRAMS['wnozk'] || [];
     const programLabels = programs.map(p => p.name);
+    await updateSession(session.id, {
+      last_resolved_scope: 'faculty',
+      last_resolved_faculty_id: 'wnozk',
+      last_resolved_topic_tags: classification.topic_tags,
+      last_message_type: 'clarification',
+      last_clarification_reason: 'program-selection',
+      last_answer_confidence: 0,
+      last_retrieval_confidence: 0,
+    });
     return res.json({
       session_id: session.id,
       answer: `Na Wydziale Nauk o Zdrowiu w Katowicach harmonogramy różnią się w zależności od kierunku. Który kierunek Cię interesuje?`,
@@ -367,9 +407,16 @@ chatRouter.post('/message', async (req, res) => {
   });
 
   // ── 6. Embedding ──
+  const retrievalQuery = buildRetrievalQuery(
+    message,
+    resolvedTopicTags,
+    resolvedFaculty,
+    classification.is_follow_up
+  );
+
   let embedding: number[];
   try {
-    embedding = await getEmbedding(message);
+    embedding = await getEmbedding(retrievalQuery);
   } catch (err) {
     console.error('[Chat] Embedding error:', err);
     return res.status(503).json({ error: 'Embedding service unavailable. Try again.' });
@@ -377,7 +424,7 @@ chatRouter.post('/message', async (req, res) => {
 
   // ── 7. Retrieval ──
   const retrieval = await retrieveChunks(
-    message,
+    retrievalQuery,
     embedding,
     resolvedScope,
     resolvedFaculty,
@@ -386,7 +433,7 @@ chatRouter.post('/message', async (req, res) => {
 
   // ── 8. Answer Pipeline ──
   const answer = await generateAnswer(
-    message,
+    retrievalQuery,
     retrieval.chunks,
     retrieval.retrieval_confidence,
     resolvedScope,
@@ -468,6 +515,64 @@ chatRouter.post('/message', async (req, res) => {
   // Never expose model-invented sources; return only sources from retrieval.
   answer.sources = buildUniqueSources(retrieval.chunks);
 
+  const actionButtons = await buildActionButtons({
+    topicTags: resolvedTopicTags,
+    scope: resolvedScope,
+    facultyId: resolvedFaculty,
+    responseType: answer.response_type,
+    sourceUrls: answer.sources.map((source) => source.url),
+  });
+
+  if (
+    answer.response_type === 'fallback' &&
+    resolvedScope === 'faculty' &&
+    resolvedFaculty &&
+    actionButtons.length > 0 &&
+    (resolvedTopicTags.includes('harmonogram') || resolvedTopicTags.includes('egzamin'))
+  ) {
+    const linkButtons = actionButtons.filter(
+      (button) => button.kind === 'link' && button.url
+    );
+
+    if (linkButtons.length > 0) {
+      const isExamTopic = resolvedTopicTags.includes('egzamin');
+      const topicLabel = isExamTopic
+        ? 'harmonogramów egzaminów'
+        : 'harmonogramów zajęć';
+      const relevantButtons = linkButtons
+        .filter((button) => {
+          const haystack = `${button.label} ${button.url}`.toLowerCase();
+          if (isExamTopic) {
+            return /egzamin/.test(haystack);
+          }
+          return /harmonogram/.test(haystack);
+        })
+        .sort((a, b) => {
+          const aHaystack = `${a.label} ${a.url}`.toLowerCase();
+          const bHaystack = `${b.label} ${b.url}`.toLowerCase();
+
+          if (isExamTopic) {
+            return Number(/egzamin/.test(bHaystack)) - Number(/egzamin/.test(aHaystack));
+          }
+
+          const aScore = Number(/zaj[eę]c|zajec/.test(aHaystack)) * 2 + Number(/egzamin/.test(aHaystack));
+          const bScore = Number(/zaj[eę]c|zajec/.test(bHaystack)) * 2 + Number(/egzamin/.test(bHaystack));
+          return bScore - aScore;
+        });
+
+      const linksText = (relevantButtons.length > 0 ? relevantButtons : linkButtons)
+        .slice(0, 4)
+        .map((button, index) => `${index + 1}. [${button.label}](${button.url})`)
+        .join('\n');
+
+      answer.answer_text = `Dla ${resolvedFaculty.toUpperCase()} najlepiej sprawdzić te strony ${topicLabel}:\n\n${linksText}`;
+      answer.response_type = 'answer';
+      answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.9);
+      answer.clarification_question = null;
+      autoComposedAnswer = true;
+    }
+  }
+
   // ── 10. Persist assistant message ──
   const sources = answer.sources.map((s) => ({ url: s.url, title: s.title }));
 
@@ -520,14 +625,6 @@ chatRouter.post('/message', async (req, res) => {
       ? 'Informacja może wymagać weryfikacji.'
       : 'Informacja może być niepełna — sprawdź bezpośrednio w źródle.';
   }
-
-  const actionButtons = await buildActionButtons({
-    topicTags: resolvedTopicTags,
-    scope: resolvedScope,
-    facultyId: resolvedFaculty,
-    responseType: answer.response_type,
-    sourceUrls: answer.sources.map((source) => source.url),
-  });
 
   const shouldSuppressAuxiliarySections = answer.response_type === 'answer' || autoComposedAnswer || !wantsSource;
 
