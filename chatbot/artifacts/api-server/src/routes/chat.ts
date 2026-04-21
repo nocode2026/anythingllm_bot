@@ -455,9 +455,18 @@ async function buildDynamicPageSummaryFromUrl(targetUrl: string): Promise<string
 
   // Extract intro: prefer first real paragraph from content (not a heading)
   let intro = '';
-  const firstParaMatch = rawHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-  if (firstParaMatch) {
-    intro = stripHtmlText(firstParaMatch[1]).trim();
+  // Find all <p> tags, skip navigation-like ones (language switchers, "click here" etc.)
+  const allParaMatches = rawHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi) ?? [];
+  for (const paraHtml of allParaMatches) {
+    const stripped = stripHtmlText(paraHtml).trim();
+    if (
+      stripped.length >= 40 &&
+      !/kliknij tutaj|read in english|odczyt strony|przejd[zź] do|switch to|language|click here|view this page|want to view/i.test(stripped) &&
+      !stripped.startsWith('http')
+    ) {
+      intro = stripped;
+      break;
+    }
   }
 
   // Fallback to excerpt if paragraph is missing or too short
@@ -908,7 +917,32 @@ chatRouter.post('/message', async (req, res) => {
     actionButtons.length > 0 &&
     (wantsSource || answer.response_type === 'fallback')
   ) {
-    const firstDynamicLink = actionButtons.find((button) => button.kind === 'link' && button.url)?.url;
+    // Prefer topic-matched URL over arbitrary RAG source URLs.
+    // When topic is known (e.g. akademik → domy-studenta), picking the first button
+    // could return a page that only mentions the topic incidentally.
+    const TOPIC_URL_PREFERENCE: Record<string, RegExp> = {
+      akademik:     /domy-studenta/i,
+      stypendium:   /stypendium/i,
+      erasmus:      /erasmus/i,
+      praktyki:     /wyszukiwarka-placowek|praktyki/i,
+      ubezpieczenie:/ubezpieczenie/i,
+      legitymacja:  /legitymacj|uslugi-informatyczne/i,
+      oplaty:       /oplaty-za-studia/i,
+      wsparcie:     /wsparcie-psychologiczne/i,
+    };
+
+    const linkButtons = actionButtons.filter((b) => b.kind === 'link' && b.url);
+    let firstDynamicLink: string | undefined;
+
+    for (const tag of resolvedTopicTags) {
+      const pattern = TOPIC_URL_PREFERENCE[tag];
+      if (pattern) {
+        const match = linkButtons.find((b) => b.url && pattern.test(b.url));
+        if (match?.url) { firstDynamicLink = match.url; break; }
+      }
+    }
+    if (!firstDynamicLink) firstDynamicLink = linkButtons[0]?.url;
+
     if (firstDynamicLink) {
       const dynamicSummary = await buildDynamicPageSummaryFromUrl(firstDynamicLink);
       if (dynamicSummary) {
