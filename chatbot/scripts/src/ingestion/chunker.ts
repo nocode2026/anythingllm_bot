@@ -13,7 +13,7 @@ const TARGET_CHARS = CHUNK_TARGET_TOKENS * CHARS_PER_TOKEN;   // 2000
 const OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN; // 200
 
 export function chunkText(text: string): Chunk[] {
-  if (!text || text.length < 50) return [];
+  if (!text || text.length < 30) return [];
 
   const chunks: Chunk[] = [];
   let start = 0;

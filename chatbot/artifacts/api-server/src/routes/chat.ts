@@ -41,8 +41,8 @@ const INSURANCE_VARIANTS: Array<{
     id: 'nnw',
     label: 'Ubezpieczenie NNW',
     keywords: ['nnw', 'nastepstw nieszczesliwych wypadkow', 'następstw nieszczęśliwych wypadków'],
-    intro: 'Ubezpieczenie NNW dotyczy następstw nieszczęśliwych wypadków. Najczęściej sprawdza się zakres ochrony, okres obowiązywania i procedurę zgłoszenia szkody.',
-    nextStep: 'Najpierw sprawdź zakres ochrony i wariant, który chcesz wybrać, a potem przejdź przez formularz zgłoszeniowy.',
+    intro: 'Ubezpieczenie NNW dotyczy następstw nieszczęśliwych wypadków. Dostępne są warianty A i B z różnymi limitami ochrony, oraz warianty I, II i II+ z różnymi poziomami rocznych składek.',
+    nextStep: 'Najczęściej wybiera się wariant II (NNW + OC w życiu prywatnym + OC praktykanta) za 55 zł rocznie. Szczegółowe informacje dostępne są na stronie ubezpieczenia.',
     detailsLinkLabel: 'Ubezpieczenie studentów i doktorantów',
     detailsLinkUrl: INSURANCE_PAGE_URL,
   },
@@ -50,8 +50,8 @@ const INSURANCE_VARIANTS: Array<{
     id: 'oc',
     label: 'Ubezpieczenie OC',
     keywords: ['oc', 'odpowiedzialnosci cywilnej', 'odpowiedzialności cywilnej'],
-    intro: 'Ubezpieczenie OC dotyczy odpowiedzialności cywilnej, czyli szkód wyrządzonych osobom trzecim. W praktyce warto sprawdzić zakres ochrony i sytuacje wyłączone z odpowiedzialności.',
-    nextStep: 'Najpierw upewnij się, jakie sytuacje obejmuje polisa OC i czy dotyczy też praktyk lub zajęć klinicznych.',
+    intro: 'Ubezpieczenie OC dotyczy odpowiedzialności cywilnej, czyli szkód wyrządzonych osobom trzecim. Dostępne są warianty z różnymi limitami i zakresem ochrony, w tym OC praktykanta dla studentów uczestniczących w praktykach.',
+    nextStep: 'Najczęściej wybiera się wariant II (NNW + OC w życiu prywatnym + OC praktykanta) za 55 zł rocznie. Warianty różnią się ceną i zakresem ochrony.',
     detailsLinkLabel: 'Ubezpieczenie studentów i doktorantów',
     detailsLinkUrl: INSURANCE_PAGE_URL,
   },
@@ -138,6 +138,36 @@ function buildUniqueSources(chunks: Array<{ source_url: string; title: string | 
 
 function userExplicitlyWantsSource(message: string): boolean {
   return /(link|źródł|zrodl|stron|regulamin|oficjaln|potwierd|podstawa|gdzie znajd|daj link|pokaż link|pokaz link)/i.test(message);
+}
+
+function userAsksAboutPrice(message: string): boolean {
+  return /(ile kosztuje|koszt|cena|warianty cenowe|skladka|skladki|oplata|oplatach)/i.test(message.toLowerCase());
+}
+
+function buildInsurancePricingSummary(chunks: Array<{ text: string }>): string | null {
+  const raw = chunks.map((c) => c.text).join('\n');
+  if (!raw) return null;
+
+  const lines: string[] = [];
+
+  // Capture common annual premium variants (I / II / II+), if present in retrieved text.
+  const premiumMatches = raw.match(/Wariant\s+(?:I\+?|II\+?|III|A|B)[\s\S]{0,140}?\d{1,3}[,.]\d{2}[\s\S]{0,80}?\d{1,3}[,.]\d{2}/gi) ?? [];
+  for (const match of premiumMatches.slice(0, 3)) {
+    const compact = match
+      .replace(/\s+/g, ' ')
+      .replace(/\s+zł/gi, ' zł')
+      .trim();
+    lines.push(`- ${compact}`);
+  }
+
+  // Capture OC limits for variants A/B if present.
+  const limitA = raw.match(/Wariant\s*A[\s\S]{0,120}?OC[^\d]{0,40}(\d[\d\s.]{2,})\s*zł/i);
+  const limitB = raw.match(/Wariant\s*B[\s\S]{0,120}?OC[^\d]{0,40}(\d[\d\s.]{2,})\s*zł/i);
+  if (limitA?.[1]) lines.push(`- Limit OC w wariancie A: ${limitA[1].replace(/\s+/g, '')} zł`);
+  if (limitB?.[1]) lines.push(`- Limit OC w wariancie B: ${limitB[1].replace(/\s+/g, '')} zł`);
+
+  if (lines.length === 0) return null;
+  return `Na stronie są podane warianty cenowe i limity OC:\n${lines.join('\n')}`;
 }
 
 function detectInsuranceVariant(message: string): InsuranceVariantId | null {
@@ -404,13 +434,17 @@ chatRouter.post('/message', async (req, res) => {
   if (isGeneralUbezpieczenie && insuranceVariantId) {
     const variant = INSURANCE_VARIANTS.find((v) => v.id === insuranceVariantId);
     if (variant) {
-      // Don't replace the answer – let the model generate from retrieval, then append practical steps
+      const asksPrice = userAsksAboutPrice(message);
+      const pricingSummary = asksPrice ? buildInsurancePricingSummary(retrieval.chunks) : null;
+      // Let the model generate from retrieval, then append practical steps
       if (answer.response_type === 'answer' && answer.answer_text) {
         // Model generated real content from retrieval – append next step and link
-        answer.answer_text = `${answer.answer_text}\n\n${variant.nextStep} Możesz też sprawdzić: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
+        const pricingPart = pricingSummary ? `${pricingSummary}\n\n` : '';
+        answer.answer_text = `${answer.answer_text}\n\n${pricingPart}${variant.nextStep} Możesz też sprawdzić: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
       } else {
         // Model didn't generate well – use template
-        answer.answer_text = `${variant.intro}\n\n${variant.nextStep} Jeśli chcesz więcej szczegółów, sprawdź: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
+        const pricingPart = pricingSummary ? `${pricingSummary}\n\n` : '';
+        answer.answer_text = `${variant.intro}\n\n${pricingPart}${variant.nextStep} Jeśli chcesz więcej szczegółów, sprawdź: [${variant.detailsLinkLabel}](${variant.detailsLinkUrl}).`;
         answer.response_type = 'answer';
       }
       answer.final_answer_confidence = Math.max(answer.final_answer_confidence, 0.85);

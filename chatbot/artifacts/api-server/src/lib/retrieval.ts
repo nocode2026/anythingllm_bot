@@ -64,6 +64,9 @@ export async function retrieveChunks(
       : scope === 'general'
         ? 'AND c.faculty_id IS NULL'
         : '';
+    const topicFilter = topic_tags.length > 0
+      ? `AND c.topic_tags && $${params.push(topic_tags)}::text[]`
+      : '';
 
     // ts_query — Polish words joined by OR
     const tsWords = queryText
@@ -85,7 +88,7 @@ export async function retrieveChunks(
           c.id,
           ts_rank_cd(c.ts_vector, to_tsquery('polish_unaccent', ${tsQuery})) AS ft_score
         FROM knowledge_chunks c
-        WHERE ${scopeFilter} ${facultyFilter}
+        WHERE ${scopeFilter} ${facultyFilter} ${topicFilter}
           AND c.ts_vector @@ to_tsquery('polish_unaccent', ${tsQuery})
       ),
       vec AS (
@@ -93,7 +96,7 @@ export async function retrieveChunks(
           c.id,
           1 - (c.embedding <=> ${embeddingLiteral}) AS vec_score
         FROM knowledge_chunks c
-        WHERE ${scopeFilter} ${facultyFilter}
+        WHERE ${scopeFilter} ${facultyFilter} ${topicFilter}
           AND c.embedding IS NOT NULL
         ORDER BY c.embedding <=> ${embeddingLiteral}
         LIMIT $${topK} * 5
@@ -114,7 +117,7 @@ export async function retrieveChunks(
         LEFT JOIN ft  ON ft.id  = c.id
         LEFT JOIN vec ON vec.id = c.id
         WHERE (ft.id IS NOT NULL OR vec.id IS NOT NULL)
-          AND ${scopeFilter} ${facultyFilter}
+          AND ${scopeFilter} ${facultyFilter} ${topicFilter}
       )
       SELECT
         id, text, source_url, title, scope, faculty_id, topic_tags, publish_date,
@@ -174,12 +177,14 @@ export async function retrieveChunks(
     // Overall retrieval confidence = highest scoring chunk
     const topChunks = chunks.slice(0, cfg.top_k);
     const best = Math.max(...topChunks.map(c => c.retrieval_confidence));
+    const answerThreshold = topic_tags.length > 0 ? 0.55 : CONFIDENCE_THRESHOLD_ANSWER;
+    const cautiousThreshold = topic_tags.length > 0 ? 0.40 : CONFIDENCE_THRESHOLD_CAUTIOUS;
 
     return {
       chunks: topChunks,
       retrieval_confidence: best,
-      can_answer: best >= CONFIDENCE_THRESHOLD_ANSWER,
-      is_cautious: best >= CONFIDENCE_THRESHOLD_CAUTIOUS && best < CONFIDENCE_THRESHOLD_ANSWER,
+      can_answer: best >= answerThreshold,
+      is_cautious: best >= cautiousThreshold && best < answerThreshold,
     };
   } finally {
     client.release();
@@ -204,13 +209,25 @@ function computeMetadataBonus(
   let bonus = 0;
   const rowTags: string[] = row.topic_tags ?? [];
   const topicOverlap = queryTopics.filter(t => rowTags.includes(t)).length;
-  if (topicOverlap > 0) bonus += 0.35;
+  if (topicOverlap > 0) bonus += 0.7;
 
   // Prefer chunks where URL/title lexical cues align with the query intent.
   const queryTokens = tokenize(queryText);
   const sourceTokens = tokenize(`${sourceUrl} ${title ?? ''}`);
   const lexicalOverlap = overlapRatio(queryTokens, sourceTokens);
   bonus += lexicalOverlap * 0.30;
+
+  if (/stypend/i.test(queryText)) {
+    const scholarshipSignals = [
+      /stypendium-rektora|stypendium rektora/i,
+      /stypendium-socjalne|stypendium socjalne/i,
+      /stypendium-ministra|stypendium ministra/i,
+      /pomoc-socjalna-i-stypendium|pomoc socjalna i stypendium/i,
+      /zapomogi|inne-stypendia|stypendia-i-wsparcie-finansowe/i,
+    ];
+    const scholarshipScore = scholarshipSignals.filter((rx) => rx.test(`${sourceUrl} ${title ?? ''}`)).length;
+    bonus += Math.min(0.28, scholarshipScore * 0.09);
+  }
 
   // Prefer likely canonical pages over deep or attachment URLs.
   const depth = pathDepth(sourceUrl);

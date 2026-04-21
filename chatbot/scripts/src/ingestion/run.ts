@@ -1,6 +1,8 @@
-import 'dotenv/config';
+import { loadRootEnv } from '@sum/db/src/loadEnv';
 import { pool } from '@sum/db/src/index';
 import { WordPressSource } from './wordpressSource';
+
+loadRootEnv();
 import { normalizeHtml } from './normalizer';
 import { classify } from './classifier';
 import { chunkText } from './chunker';
@@ -62,7 +64,31 @@ const MOCK_PAGES = [
     content: { rendered: `<h2>Ubezpieczenie studentów i doktorantów ŚUM</h2>
       <p>Studenci dzienni do 26 roku życia są objęci ubezpieczeniem zdrowotnym przez uczelnię.</p>
       <p>Dobrowolne ubezpieczenie NNW można wykupić przez uczelnię — formularz w dziekanacie.</p>
-      <p>Ubezpieczenie podczas praktyk jest obowiązkowe i finansowane przez uczelnię.</p>` },
+      <p>Ubezpieczenie podczas praktyk jest obowiązkowe i finansowane przez uczelnię.</p>
+      
+      <h3>Ochrona ubezpieczeniowa</h3>
+      <p>Ubezpieczenie dostępne jest w kilku wariantach cenowych w zależności od zakresu ochrony.</p>
+      
+      <h4>Warianty</h4>
+      <p><strong>Wariant A</strong> — Limity ochrony: NNW 26.000 zł, OC i OC praktykanta 50.000 zł</p>
+      <p><strong>Wariant B</strong> — Limity ochrony: NNW 45.000 zł, OC i OC praktykanta 100.000 zł</p>
+      <p><strong>Wariant I</strong> — NNW: 40 zł rocznie (70 zł dla innej kategorii)</p>
+      <p><strong>Wariant II</strong> — NNW + OC w życiu prywatnym + OC praktykanta: 55 zł rocznie (93 zł dla innej kategorii)</p>
+      <p><strong>Wariant II+</strong> — NNW + OC w życiu prywatnym + OC praktykanta + asysta prawna: 62 zł rocznie (100 zł dla innej kategorii)</p>
+      
+      <h4>Ubezpieczenie zdrowotne</h4>
+      <p>Ubezpieczenie zdrowotne gwarantuje dostęp do świadczeń medycznych NFZ. Aby się rejestrować przez Uczelnię, student musi być zarejestrzszaowany w PESEL, być studentem i mieć ważną legitymację. Uczela zgłasza studentów zbiorowo do NFZ — o tym decyduje stan na dacie zgłoszenia. Wymagane dokumenty dostępne w dziekanacie.</p>
+      
+      <h4>Ubezpieczenie NNW (Następstw Nieszczęśliwych Wypadków)</h4>
+      <p>Ubezpieczenie NNW dotyczy następstw nieszczęśliwych wypadków. Studenci mogą wybrać warianty A, B (limity ochrony) lub I, II, II+ (roczne składki). Sprawdź zakres ochrony i okres obowiązywania. Procedura zgłoszenia szkody dostępna w warunkach ubezpieczenia.</p>
+      
+      <h4>Ubezpieczenie OC (Odpowiedzialności Cywilnej)</h4>
+      <p>Ubezpieczenie OC dotyczy odpowiedzialności cywilnej za szkody wyrządzone osobom trzecim. Dostępne są warianty z różnymi limitami (50.000 zł lub 100.000 zł) i zakresami ochrony, w tym OC praktykanta dla studentów uczestniczących w praktykach. OC praktykanta obowiązkowe dla niektórych kierunków studów.</p>
+      
+      <h4>Warunki i dokumenty</h4>
+      <p>Ubezpieczenie nie jest obowiązkowe, jednak studenci mający przystąpić w bieżącym roku akademickim do praktyk mogą być zobowiązani do przedstawienia dowodu zawarcia ubezpieczenia NNW lub OC praktykanta.</p>
+      <p>Formularze wniosków dostępne w dziekanacie właściwego wydziału. OWU NNW i OC zawierają pełne warunki ubezpieczenia, wyłączenia i procedury zgłaszania szkód.</p>
+      <p>Biorąc pod uwagę atrakcyjny poziom cenowy oraz gwarantowany zakres ochrony ubezpieczeniowej zachęcamy do ubezpieczenia się już teraz.</p>` },
   },
 ];
 
@@ -73,6 +99,7 @@ type WPPage = {
   title: { rendered: string };
   content: { rendered: string };
   date: string;
+  modified?: string;
   type: string;
 };
 
@@ -82,6 +109,31 @@ async function ingestPage(page: WPPage, jobId: string): Promise<number> {
 
   const title = page.title.rendered.replace(/<[^>]+>/g, '').trim();
   const cls = classify(page.link, title, text);
+  const modifiedAt = page.modified ?? page.date;
+
+  const existing = await pool.query(
+    `SELECT id, metadata
+     FROM knowledge_sources
+     WHERE source_url = $1
+     LIMIT 1`,
+    [page.link]
+  );
+
+  if (existing.rows.length > 0) {
+    const existingMetadata = existing.rows[0].metadata as { modified?: string } | null;
+    if (existingMetadata?.modified === modifiedAt) {
+      // Skip if unchanged, UNLESS it's the insurance page (which needs full re-index due to Elementor complexity)
+      if (!page.link.includes('ubezpieczenie')) {
+        await pool.query(
+          `UPDATE ingestion_progress SET processed_pages = processed_pages + 1, last_cursor = $2 WHERE job_id = $1`,
+          [jobId, page.slug]
+        );
+        console.log(`  ↷ ${page.slug} (unchanged)`);
+        return 0;
+      }
+      // For insurance page: continue to re-index even if metadata says unchanged
+    }
+  }
 
   // Upsert knowledge_source
   const { rows: [src] } = await pool.query(
@@ -89,12 +141,12 @@ async function ingestPage(page: WPPage, jobId: string): Promise<number> {
      VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7)
      ON CONFLICT (source_url) DO UPDATE SET
        title = EXCLUDED.title, scope = EXCLUDED.scope, faculty_id = EXCLUDED.faculty_id,
-       clean_text = EXCLUDED.clean_text, last_fetched_at = NOW()
+       clean_text = EXCLUDED.clean_text, metadata = EXCLUDED.metadata, last_fetched_at = NOW()
      RETURNING id`,
     [
       page.type === 'post' ? 'wordpress_post' : 'wordpress_page',
       page.link, title, cls.scope, cls.faculty_id, text,
-      JSON.stringify({ wp_id: page.id, slug: page.slug, published: page.date }),
+      JSON.stringify({ wp_id: page.id, slug: page.slug, published: page.date, modified: modifiedAt }),
     ]
   );
 
@@ -107,6 +159,9 @@ async function ingestPage(page: WPPage, jobId: string): Promise<number> {
   // Embed
   const embeddings = await embedTexts(chunks.map(c => c.text));
 
+  // Replace all chunks for source to avoid stale leftovers after content shrinkage.
+  await pool.query(`DELETE FROM knowledge_chunks WHERE source_id = $1`, [sourceId]);
+
   // Insert chunks
   let inserted = 0;
   for (let i = 0; i < chunks.length; i++) {
@@ -116,11 +171,7 @@ async function ingestPage(page: WPPage, jobId: string): Promise<number> {
 
     await pool.query(
       `INSERT INTO knowledge_chunks (source_id, chunk_index, text, embedding, scope, faculty_id, topic_tags, source_url, title, publish_date, token_count)
-       VALUES ($1,$2,$3,$4::vector,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT (source_id, chunk_index) DO UPDATE SET
-         text = EXCLUDED.text, embedding = EXCLUDED.embedding,
-         scope = EXCLUDED.scope, faculty_id = EXCLUDED.faculty_id,
-         topic_tags = EXCLUDED.topic_tags`,
+       VALUES ($1,$2,$3,$4::vector,$5,$6,$7,$8,$9,$10,$11)`,
       [
         sourceId, chunk.chunk_index, chunk.text, embLiteral,
         cls.scope, cls.faculty_id, cls.topic_tags,
