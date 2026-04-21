@@ -18,6 +18,22 @@ export const chatRouter = Router();
 const INSURANCE_PAGE_URL = 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/';
 const DOMY_STUDENTA_URL = 'https://student.sum.edu.pl/domy-studenta/';
 
+interface PageSummaryPreset {
+  pattern: RegExp;
+  title: string;
+  summary: string;
+  subsections: string[];
+}
+
+const PAGE_SUMMARY_PRESETS: PageSummaryPreset[] = [
+  {
+    pattern: /student\.sum\.edu\.pl\/domy-studenta\/?/i,
+    title: 'DOMY STUDENTA',
+    summary: 'Na tej stronie znajdziesz najważniejsze informacje o domach studenta SUM: zasady i organizację zakwaterowania oraz informacje praktyczne dla studentów zainteresowanych miejscem w akademiku.',
+    subsections: ['Katowice', 'Zabrze', 'Sosnowiec', 'Druki i dokumenty'],
+  },
+];
+
 type InsuranceVariantId = 'zdrowotne' | 'nnw' | 'oc';
 
 const INSURANCE_VARIANTS: Array<{
@@ -201,6 +217,26 @@ function buildRetrievalQuery(
     .trim();
 }
 
+function extractSummaryRequestUrl(message: string): string | null {
+  if (!/(kr[oó]tko opisz|podaj link)/i.test(message)) return null;
+  const match = message.match(/https?:\/\/[^\s)]+/i);
+  return match ? match[0].trim() : null;
+}
+
+function buildDeterministicPageSummary(message: string): string | null {
+  const requestedUrl = extractSummaryRequestUrl(message);
+  if (!requestedUrl) return null;
+
+  const preset = PAGE_SUMMARY_PRESETS.find((item) => item.pattern.test(requestedUrl));
+  if (!preset) return null;
+
+  const subsections = preset.subsections
+    .map((section, index) => `${index + 1}. ${section}`)
+    .join('\n');
+
+  return `${preset.summary}\n\nPodsekcje na tej stronie:\n${subsections}\n\nWięcej informacji znajdziesz na stronie: [${preset.title}](${requestedUrl}).`;
+}
+
 const MessageBodySchema = z.object({
   message: z.string().min(1).max(2000),
   session_id: z.string().uuid().optional(),
@@ -238,6 +274,74 @@ chatRouter.post('/message', async (req, res) => {
   // ── 3. Query classification ──
   const classification = classifyQuery(message, effectiveFaculty);
   const insuranceVariantId = detectInsuranceVariant(message);
+
+  const deterministicPageSummary = buildDeterministicPageSummary(message);
+  if (deterministicPageSummary) {
+    const userMsgId = await saveMessage(session.id, {
+      role: 'user',
+      content: message,
+      message_type: 'normal',
+      resolved_scope: 'general',
+      resolved_faculty_id: null,
+      query_classification_confidence: classification.query_classification_confidence,
+      faculty_detection_confidence: classification.faculty_detection_confidence,
+    });
+
+    const assistantMsgId = await saveMessage(session.id, {
+      role: 'assistant',
+      content: deterministicPageSummary,
+      message_type: 'normal',
+      response_type: 'answer',
+      resolved_scope: 'general',
+      resolved_faculty_id: null,
+      query_classification_confidence: classification.query_classification_confidence,
+      faculty_detection_confidence: classification.faculty_detection_confidence,
+      retrieval_confidence: 0.95,
+      final_answer_confidence: 0.95,
+      retrieved_sources: [],
+      followup_parent_message_id: userMsgId,
+    });
+
+    const latency = Date.now() - startTime;
+    await updateSession(session.id, {
+      faculty_context: null,
+      last_resolved_faculty_id: null,
+      last_resolved_scope: 'general',
+      last_resolved_topic_tags: ['akademik'],
+      last_source_urls: [],
+      last_answer_confidence: 0.95,
+      last_retrieval_confidence: 0.95,
+      last_message_type: 'normal',
+    });
+
+    await logEvent({
+      session_id: session.id,
+      message_id: assistantMsgId,
+      event_type: 'chat_message',
+      intent: classification.intent,
+      faculty_context: null,
+      retrieval_confidence: 0.95,
+      final_answer_confidence: 0.95,
+      latency_ms: latency,
+      fallback_reason: null,
+    });
+
+    return res.json({
+      session_id: session.id,
+      answer: deterministicPageSummary,
+      response_type: 'answer',
+      sources: [],
+      final_answer_confidence: 0.95,
+      retrieval_confidence: 0.95,
+      clarification_question: null,
+      suggested_questions: [],
+      action_buttons: [],
+      confidence_note: null,
+      resolved_scope: 'general',
+      resolved_faculty_id: null,
+      latency_ms: latency,
+    });
+  }
 
   // ── 4. Follow-up handling ──
   let resolvedFaculty = classification.faculty_id;
