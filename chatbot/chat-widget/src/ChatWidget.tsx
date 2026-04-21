@@ -179,7 +179,7 @@ interface Props {
 }
 
 /* ── QuickNav: hierarchical navigation panel ──────────────────────────────── */
-function QuickNav({ nav, onSend }: { nav: NavNode[]; onSend: (text: string) => void }) {
+function QuickNav({ nav, onSend }: { nav: NavNode[]; onSend: (text: string, displayText?: string) => void }) {
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
   const currentItems: NavNode[] = activeGroup
@@ -213,7 +213,7 @@ function QuickNav({ nav, onSend }: { nav: NavNode[]; onSend: (text: string) => v
               <button
                 key={item.label}
                 className={styles.quickBtn}
-                onClick={() => onSend(`Krótko opisz, co znajdę na stronie "${item.label}", wypisz ewentualne podsekcje i na końcu podaj link: ${item.url}`)}
+                onClick={() => onSend(`Krótko opisz, co znajdę na stronie "${item.label}", wypisz ewentualne podsekcje i na końcu podaj link: ${item.url}`, item.label)}
               >
                 {item.label}
               </button>
@@ -336,13 +336,13 @@ export function ChatWidget({ apiUrl, theme }: Props) {
     }]);
   };
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, displayText?: string) => {
     if (!text.trim() || loading) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: text,
+      content: displayText ?? text,
       ts: new Date(),
     };
     setMessages(prev => [...prev, userMsg]);

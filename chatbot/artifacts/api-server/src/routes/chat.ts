@@ -278,30 +278,122 @@ function collectUniqueSubsections(items: string[], limit: number): string[] {
   return deduped;
 }
 
-function extractSubsectionsFromHtml(html: string, pageTitle: string): string[] {
-  const stoplist = new Set([
+interface AccordionStructure {
+  topLevel: string[];
+  childrenMap: Map<string, string[]>;
+}
+
+function buildAccordionStoplist(pageTitle: string): Set<string> {
+  return new Set([
     'Wsparcie IT', 'Welcome Centre', 'BHP', 'Edukacja zdalna', 'Platforma e-learningowa',
     'Bazy medyczne', 'Biblioteka SUM', 'Deklaracja dostępności', 'BIP', 'Polityka Prywatności',
     'Czytaj więcej', 'Przejdź do wszystkich artykułów', 'Dowiedz się więcej', 'Rozwiń', 'Zwiń',
     pageTitle,
   ].map((item) => item.toLowerCase()));
+}
 
-  const accordionLabels: string[] = [];
-  const accordionRegexes = [
-    /<div class="e-n-accordion-item-title-text">([\s\S]*?)<\/div>/gi,
-    /<summary[^>]*class="[^"]*e-n-accordion-item-title[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>[\s\S]*?<\/summary>/gi,
-    /<div[^>]*class="[^"]*elementor-tab-title[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-  ];
+/**
+ * Extracts accordion sections hierarchically from any Elementor page.
+ * Uses position-aware depth tracking via <details> open/close tags so that
+ * top-level accordion items are separated from their nested children.
+ */
+function extractAccordionStructure(html: string, pageTitle: string): AccordionStructure {
+  const stoplist = buildAccordionStoplist(pageTitle);
 
-  for (const regex of accordionRegexes) {
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(html)) !== null) {
-      const text = normalizeSubsectionLabel(match[1] ?? '');
+  type ScanEvent = { pos: number; type: 'open' | 'close' | 'title'; text?: string };
+  const events: ScanEvent[] = [];
+
+  let m: RegExpExecArray | null;
+
+  // Track <details> open/close to determine nesting depth
+  const openRe = /<details[^>]*>/gi;
+  while ((m = openRe.exec(html)) !== null) {
+    events.push({ pos: m.index, type: 'open' });
+  }
+  const closeRe = /<\/details>/gi;
+  while ((m = closeRe.exec(html)) !== null) {
+    events.push({ pos: m.index, type: 'close' });
+  }
+
+  // Elementor nested-accordion title text (e-n-accordion)
+  const nestedTitleRe = /<div class="e-n-accordion-item-title-text">([\s\S]*?)<\/div>/gi;
+  while ((m = nestedTitleRe.exec(html)) !== null) {
+    const text = normalizeSubsectionLabel(m[1] ?? '');
+    if (text.length >= 3) events.push({ pos: m.index, type: 'title', text });
+  }
+
+  // Classic Elementor tab titles (elementor-tab-title with data-tab attribute)
+  const tabTitleRe = /<div[^>]*class="[^"]*elementor-tab-title[^"]*"[^>]*data-tab="\d+"[^>]*>([\s\S]*?)<\/div>/gi;
+  while ((m = tabTitleRe.exec(html)) !== null) {
+    const text = normalizeSubsectionLabel(m[1] ?? '');
+    if (text.length >= 3) events.push({ pos: m.index, type: 'title', text });
+  }
+
+  // Sort all events by their position in the HTML document
+  events.sort((a, b) => a.pos - b.pos);
+
+  const topLevel: string[] = [];
+  const childrenMap = new Map<string, string[]>();
+  const seenTop = new Set<string>();
+  const seenChildren = new Map<string, Set<string>>();
+  let depth = 0;
+  let lastTopLevel = '';
+
+  for (const event of events) {
+    if (event.type === 'open') {
+      depth++;
+    } else if (event.type === 'close') {
+      depth = Math.max(0, depth - 1);
+      // When a top-level <details> closes, reset the last top-level tracker
+      if (depth === 0) lastTopLevel = '';
+    } else if (event.type === 'title' && event.text) {
+      const text = event.text;
       if (!isMeaningfulSubsection(text, pageTitle, stoplist)) continue;
-      accordionLabels.push(text);
+      const lower = text.toLowerCase();
+
+      if (depth <= 1) {
+        // Title inside the first level of <details> → top-level section
+        if (!seenTop.has(lower)) {
+          seenTop.add(lower);
+          topLevel.push(text);
+          lastTopLevel = text;
+          childrenMap.set(text, []);
+          seenChildren.set(text, new Set());
+        }
+      } else if (lastTopLevel) {
+        // Title inside deeper nesting → child of the current top-level section
+        const childSet = seenChildren.get(lastTopLevel);
+        if (childSet && !childSet.has(lower)) {
+          childSet.add(lower);
+          const children = childrenMap.get(lastTopLevel) ?? [];
+          children.push(text);
+          childrenMap.set(lastTopLevel, children);
+        }
+      }
     }
   }
 
+  return { topLevel, childrenMap };
+}
+
+/**
+ * Returns a flat list of all accordion sections (top-level + children),
+ * or falls back to h2–h4 headings for non-accordion pages.
+ */
+function extractSubsectionsFromHtml(html: string, pageTitle: string): string[] {
+  const { topLevel, childrenMap } = extractAccordionStructure(html, pageTitle);
+
+  if (topLevel.length > 0) {
+    const all: string[] = [];
+    for (const section of topLevel) {
+      all.push(section);
+      all.push(...(childrenMap.get(section) ?? []));
+    }
+    return all.slice(0, 14);
+  }
+
+  // Fallback for non-accordion pages: extract h2/h3/h4 headings
+  const stoplist = buildAccordionStoplist(pageTitle);
   const headings: string[] = [];
   const headingRegex = /<h[2-4][^>]*>([\s\S]*?)<\/h[2-4]>/gi;
   let headingMatch: RegExpExecArray | null;
@@ -310,7 +402,7 @@ function extractSubsectionsFromHtml(html: string, pageTitle: string): string[] {
     if (isMeaningfulSubsection(text, pageTitle, stoplist)) headings.push(text);
   }
 
-  return collectUniqueSubsections([...accordionLabels, ...headings], 10);
+  return collectUniqueSubsections(headings, 8);
 }
 
 async function fetchWpItemByUrl(targetUrl: string): Promise<WpSummaryItem | null> {
@@ -359,21 +451,59 @@ async function buildDynamicPageSummaryFromUrl(targetUrl: string): Promise<string
   if (!item) return null;
 
   const title = stripHtmlText(item.title?.rendered ?? '').trim() || targetUrl;
-  const excerpt = stripHtmlText(item.excerpt?.rendered ?? '').trim();
-  const content = stripHtmlText(item.content?.rendered ?? '').trim();
-  const summarySource = excerpt || content;
-  const summary = summarySource
-    ? summarySource.slice(0, 260).replace(/\s+[\S]*$/, '').trim() + (summarySource.length > 260 ? '...' : '')
-    : `Na tej stronie znajdziesz informacje dotyczące: ${title}.`;
+  const rawHtml = item.content?.rendered ?? '';
 
-  const rawHtml = `${item.content?.rendered ?? ''}`;
-  const subsections = extractSubsectionsFromHtml(rawHtml, title);
-  const subsectionBlock = subsections.length > 0
-    ? `\n\nPodsekcje na tej stronie:\n${subsections.map((section, index) => `${index + 1}. ${section}`).join('\n')}`
-    : '';
+  // Extract intro: prefer first real paragraph from content (not a heading)
+  let intro = '';
+  const firstParaMatch = rawHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+  if (firstParaMatch) {
+    intro = stripHtmlText(firstParaMatch[1]).trim();
+  }
 
+  // Fallback to excerpt if paragraph is missing or too short
+  if (intro.length < 30) {
+    const excerpt = stripHtmlText(item.excerpt?.rendered ?? '').trim();
+    const titleLower = title.toLowerCase();
+    // Skip excerpt if it's just the title repeated (WP auto-excerpt)
+    if (excerpt.length > 20 && !excerpt.toLowerCase().startsWith(titleLower)) {
+      intro = excerpt;
+    }
+  }
+
+  // Last resort: generic text
+  if (intro.length < 10) {
+    intro = `Na tej stronie znajdziesz informacje dla studentów ŚUM dotyczące: ${title}.`;
+  }
+
+  // Trim to first 2 sentences so it stays concise
+  const sentenceMatches = intro.match(/[^.!?]+[.!?]+/g);
+  if (sentenceMatches && sentenceMatches.length > 2) {
+    intro = sentenceMatches.slice(0, 2).join(' ').trim();
+  }
+
+  // Build hierarchical section view
+  const { topLevel, childrenMap } = extractAccordionStructure(rawHtml, title);
   const finalUrl = item.link || targetUrl;
-  return `${summary}${subsectionBlock}\n\nWięcej informacji znajdziesz na stronie: [${title}](${finalUrl}).`;
+
+  let answer = `${intro}\n\n`;
+
+  if (topLevel.length > 0) {
+    answer += `Na tej stronie:\n`;
+    for (const section of topLevel) {
+      const children = childrenMap.get(section) ?? [];
+      if (children.length > 0) {
+        const preview = children.slice(0, 3).join(', ');
+        const more = children.length > 3 ? ' i inne' : '';
+        answer += `**${section}** – ${preview}${more}\n`;
+      } else {
+        answer += `**${section}**\n`;
+      }
+    }
+    answer += '\n';
+  }
+
+  answer += `[${title}](${finalUrl})`;
+  return answer;
 }
 
 async function buildDeterministicPageSummary(message: string): Promise<string | null> {
