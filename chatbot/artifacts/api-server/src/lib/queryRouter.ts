@@ -44,6 +44,7 @@ export const TOPIC_ALIASES: Record<string, string[]> = {
   stypendium: ['stypendium', 'stypendia', 'stypa', 'stypendium rektora', 'stypendium socjalne', 'stypendium ministra'],
   dziekanat: ['dzikanat', 'dziekanat', 'dziekanatu', 'sekretariat'],
   harmonogram: ['harmonogarm', 'harmonogram', 'plan zajęć', 'plan zajec', 'rozkład', 'plan z', 'harmonogram z'],
+  sylabus: ['sylabus', 'sylabusy', 'syllabus', 'syllabi'],
   egzamin: ['egzamin', 'egzaminy', 'kolokwium', 'zaliczeń', 'zaliczenia'],
   praktyki: ['praksy', 'praktyki', 'staż', 'staz', 'praktyka', 'praktyk'],
   erasmus: ['erasmus', 'wymiana', 'wyjazd zagraniczny'],

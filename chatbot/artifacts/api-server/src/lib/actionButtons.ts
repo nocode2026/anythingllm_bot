@@ -35,6 +35,45 @@ const FACULTY_LABELS: Record<string, string> = {
   fbb: 'FBB',
 };
 
+const FACULTY_TOPIC_FALLBACK_URLS: Record<string, Record<string, string>> = {
+  wnmz: {
+    harmonogram: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-zajec/',
+    egzamin: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-egzaminow/',
+    sylabus: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/sylabusy/',
+    dziekanat: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/kontakt/',
+  },
+  wnmk: {
+    harmonogram: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-zajec/',
+    egzamin: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-egzaminow/',
+    sylabus: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/sylabusy/',
+    dziekanat: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/kontakt/',
+  },
+  wnozk: {
+    harmonogram: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy/',
+    egzamin: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy-egzaminow/',
+    sylabus: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/sylabusy/',
+    dziekanat: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/kontakt/',
+  },
+  wnf: {
+    harmonogram: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-zajec/',
+    egzamin: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-egzaminow/',
+    sylabus: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/sylabusy/',
+    dziekanat: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/kontakt/',
+  },
+  wzpb: {
+    harmonogram: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-zajec/',
+    egzamin: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-egzaminow/',
+    sylabus: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/sylabusy/',
+    dziekanat: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/kontakt/',
+  },
+  fbb: {
+    harmonogram: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy/',
+    egzamin: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy-egzaminow/',
+    sylabus: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/sylabusy/',
+    dziekanat: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/kontakt/',
+  },
+};
+
 const GENERAL_TOPIC_MATCHERS: Record<string, RegExp[]> = {
   stypendium: [
     /stypendium/i,
@@ -54,6 +93,7 @@ const GENERAL_TOPIC_MATCHERS: Record<string, RegExp[]> = {
 
 const FACULTY_TOPIC_MATCHERS: Record<string, RegExp[]> = {
   harmonogram: [/harmonogram/i],
+  sylabus: [/sylabus|syllabus/i],
   egzamin: [/egzamin/i],
   praktyki: [/praktyk/i],
   dziekanat: [/kontakt|dziekanat|sekretariat/i],
@@ -203,9 +243,11 @@ function rankFacultyItems(facultyId: string, topic: string, items: WPItem[]): WP
       const aTitle = stripHtml(a.title.rendered);
       const bTitle = stripHtml(b.title.rendered);
       const aExact = Number(topic === 'harmonogram' ? /harmonogramy zajęć|harmonogramy zajec/i.test(aTitle) : false)
+        + Number(topic === 'sylabus' ? /sylabus|syllabus/i.test(aTitle) : false)
         + Number(topic === 'egzamin' ? /harmonogramy egzaminów|harmonogramy egzaminow/i.test(aTitle) : false)
         + Number(topic === 'dziekanat' ? /kontakt|dziekanat/i.test(aTitle) : false);
       const bExact = Number(topic === 'harmonogram' ? /harmonogramy zajęć|harmonogramy zajec/i.test(bTitle) : false)
+        + Number(topic === 'sylabus' ? /sylabus|syllabus/i.test(bTitle) : false)
         + Number(topic === 'egzamin' ? /harmonogramy egzaminów|harmonogramy egzaminow/i.test(bTitle) : false)
         + Number(topic === 'dziekanat' ? /kontakt|dziekanat/i.test(bTitle) : false);
       return bExact - aExact;
@@ -222,6 +264,27 @@ function labelFacultyItem(facultyId: string, topic: string, item: WPItem): Actio
     };
   }
   return { label: raw, kind: 'link', url: normalizeUrl(item.link) };
+}
+
+function fallbackFacultyButton(facultyId: string, topic: string): ActionButton | null {
+  const url = FACULTY_TOPIC_FALLBACK_URLS[facultyId]?.[topic];
+  if (!url) return null;
+
+  const topicLabel = topic === 'harmonogram'
+    ? 'Harmonogramy zajęć'
+    : topic === 'egzamin'
+      ? 'Harmonogramy egzaminów'
+      : topic === 'sylabus'
+        ? 'Sylabusy'
+        : topic === 'dziekanat'
+          ? 'Dziekanat'
+          : 'Informacje';
+
+  return {
+    label: `${topicLabel} ${FACULTY_LABELS[facultyId] ?? facultyId.toUpperCase()}`,
+    kind: 'link',
+    url: normalizeUrl(url),
+  };
 }
 
 export async function buildActionButtons(input: {
@@ -254,7 +317,12 @@ export async function buildActionButtons(input: {
   if (input.scope === 'faculty' && input.facultyId) {
     for (const topic of input.topicTags) {
       const matches = rankFacultyItems(input.facultyId, topic, wpItems).slice(0, 4);
-      buttons.push(...matches.map((item) => labelFacultyItem(input.facultyId!, topic, item)));
+      if (matches.length > 0) {
+        buttons.push(...matches.map((item) => labelFacultyItem(input.facultyId!, topic, item)));
+      } else {
+        const fallback = fallbackFacultyButton(input.facultyId, topic);
+        if (fallback) buttons.push(fallback);
+      }
     }
   }
 

@@ -724,7 +724,7 @@ chatRouter.post('/message', async (req, res) => {
 
   // Faculty clarification: If asking about faculty-specific topic but no faculty specified, ask which one.
   // NOTE: "akademik" is intentionally excluded because it is a general topic on SUM.
-  const FACULTY_SPECIFIC_TOPICS = ['dziekanat', 'harmonogram', 'egzamin', 'praktyki', 'kontakt'];
+  const FACULTY_SPECIFIC_TOPICS = ['dziekanat', 'harmonogram', 'sylabus', 'egzamin', 'praktyki', 'kontakt'];
   const hasFacultySpecificTopic = classification.topic_tags.some(tag => FACULTY_SPECIFIC_TOPICS.includes(tag));
   
   if (
@@ -972,7 +972,7 @@ chatRouter.post('/message', async (req, res) => {
     resolvedScope === 'faculty' &&
     resolvedFaculty &&
     actionButtons.length > 0 &&
-    (resolvedTopicTags.includes('harmonogram') || resolvedTopicTags.includes('egzamin'))
+    (resolvedTopicTags.includes('harmonogram') || resolvedTopicTags.includes('egzamin') || resolvedTopicTags.includes('sylabus'))
   ) {
     const linkButtons = actionButtons.filter(
       (button) => button.kind === 'link' && button.url
@@ -980,14 +980,20 @@ chatRouter.post('/message', async (req, res) => {
 
     if (linkButtons.length > 0) {
       const isExamTopic = resolvedTopicTags.includes('egzamin');
+      const isSyllabusTopic = resolvedTopicTags.includes('sylabus');
       const topicLabel = isExamTopic
         ? 'harmonogramów egzaminów'
-        : 'harmonogramów zajęć';
+        : isSyllabusTopic
+          ? 'sylabusów'
+          : 'harmonogramów zajęć';
       const relevantButtons = linkButtons
         .filter((button) => {
           const haystack = `${button.label} ${button.url}`.toLowerCase();
           if (isExamTopic) {
             return /egzamin/.test(haystack);
+          }
+          if (isSyllabusTopic) {
+            return /sylabus|syllabus/.test(haystack);
           }
           return /harmonogram/.test(haystack);
         })
@@ -997,6 +1003,10 @@ chatRouter.post('/message', async (req, res) => {
 
           if (isExamTopic) {
             return Number(/egzamin/.test(bHaystack)) - Number(/egzamin/.test(aHaystack));
+          }
+
+          if (isSyllabusTopic) {
+            return Number(/sylabus|syllabus/.test(bHaystack)) - Number(/sylabus|syllabus/.test(aHaystack));
           }
 
           const aScore = Number(/zaj[eę]c|zajec/.test(aHaystack)) * 2 + Number(/egzamin/.test(aHaystack));
@@ -1070,7 +1080,10 @@ chatRouter.post('/message', async (req, res) => {
       : 'Informacja może być niepełna — sprawdź bezpośrednio w źródle.';
   }
 
-  const shouldSuppressAuxiliarySections = answer.response_type === 'answer' || autoComposedAnswer || !wantsSource;
+  const shouldSuppressAuxiliarySections =
+    answer.response_type === 'answer' ||
+    autoComposedAnswer ||
+    (!wantsSource && answer.response_type !== 'fallback');
 
   const shouldSuppressSuggestions =
     shouldSuppressAuxiliarySections ||
