@@ -11,7 +11,7 @@ import {
 import { moderateInput, moderateOutput, getModerationResponse } from '../lib/moderationGuard';
 import { logEvent } from '../lib/analytics';
 import { buildSuggestedQuestions } from '../lib/suggestedQuestions';
-import { buildActionButtons } from '../lib/actionButtons';
+import { buildActionButtons, type ActionButton } from '../lib/actionButtons';
 
 export const chatRouter = Router();
 
@@ -493,6 +493,12 @@ async function buildDynamicPageSummaryFromUrl(targetUrl: string): Promise<string
   // Build hierarchical section view
   const { topLevel, childrenMap } = extractAccordionStructure(rawHtml, title);
   const finalUrl = item.link || targetUrl;
+  const isSchedulePage = /harmonogram/i.test(title) || /harmonogram/i.test(finalUrl);
+
+  if (isSchedulePage) {
+    const scheduleIntro = 'Na tej stronie znajdziesz aktualne harmonogramy dla kierunków i roczników tego wydziału. Szczegóły oraz pliki źródłowe są dostępne pod linkiem poniżej.';
+    return `${scheduleIntro}\n\n[${title}](${finalUrl})`;
+  }
 
   let answer = `${intro}\n\n`;
 
@@ -904,13 +910,18 @@ chatRouter.post('/message', async (req, res) => {
   // Never expose model-invented sources; return only sources from retrieval.
   answer.sources = buildUniqueSources(retrieval.chunks);
 
-  const actionButtons = await buildActionButtons({
-    topicTags: resolvedTopicTags,
-    scope: resolvedScope,
-    facultyId: resolvedFaculty,
-    responseType: answer.response_type,
-    sourceUrls: answer.sources.map((source) => source.url),
-  });
+  let actionButtons: ActionButton[] = [];
+  try {
+    actionButtons = await buildActionButtons({
+      topicTags: resolvedTopicTags,
+      scope: resolvedScope,
+      facultyId: resolvedFaculty,
+      responseType: answer.response_type,
+      sourceUrls: answer.sources.map((source) => source.url),
+    });
+  } catch (error) {
+    console.error('[Chat] Action buttons build failed:', error);
+  }
 
   if (
     resolvedScope === 'general' &&

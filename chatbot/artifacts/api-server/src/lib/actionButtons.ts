@@ -5,136 +5,258 @@ export interface ActionButton {
   query?: string;
 }
 
-const GENERAL_TOPIC_LINKS: Record<string, ActionButton[]> = {
+interface WPItem {
+  id: number;
+  slug: string;
+  link: string;
+  title: { rendered: string };
+  type: string;
+}
+
+const WP_BASE_URL = process.env.WP_BASE_URL ?? 'https://student.sum.edu.pl/wp-json/wp/v2';
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 45_000;
+
+const FACULTY_URL_PATTERNS: Record<string, RegExp> = {
+  wnmz: /wydzial-nauk-medycznych-w-zabrzu/i,
+  wnmk: /wydzial-nauk-medycznych-w-katowicach/i,
+  wnozk: /wydzial-nauk-o-zdrowiu-w-katowicach/i,
+  wnf: /wydzial-nauk-farmaceutycznych-w-sosnowcu|wydzial-nauk-o-farmaceutycznych-w-sosnowcu/i,
+  wzpb: /wydzial-zdrowia-publicznego-w-bytomiu/i,
+  fbb: /filia-w-bielsku-bialej/i,
+};
+
+const FACULTY_LABELS: Record<string, string> = {
+  wnmz: 'WNMZ',
+  wnmk: 'WNMK',
+  wnozk: 'WNoZK',
+  wnf: 'WNF',
+  wzpb: 'WZPB',
+  fbb: 'FBB',
+};
+
+const GENERAL_TOPIC_MATCHERS: Record<string, RegExp[]> = {
   stypendium: [
-    { label: 'Stypendium Rektora', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-rektora/' },
-    { label: 'Stypendium Socjalne', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-socjalne/' },
-    { label: 'Dla osób z niepełnosprawnościami', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-dla-niepelnosprawnych/' },
-    { label: 'Zapomogi', kind: 'link', url: 'https://student.sum.edu.pl/zapomogi/' },
-    { label: 'System zachęt KPO', kind: 'link', url: 'https://student.sum.edu.pl/stypendia-w-ramach-systemu-zachet-kpo/' },
-    { label: 'Stypendium Ministra', kind: 'link', url: 'https://student.sum.edu.pl/stypendium-ministra/' },
-    { label: 'Świadczenia i stypendia', kind: 'link', url: 'https://student.sum.edu.pl/swiadczenia-i-stypendia/' },
+    /stypendium/i,
+    /zapomog/i,
+    /swiadczen/i,
+    /kpo/i,
   ],
-  ubezpieczenie: [
-    { label: 'Ubezpieczenie studentów', kind: 'link', url: 'https://student.sum.edu.pl/ubezpieczenie-studentow-i-doktorantow/' },
-  ],
-  legitymacja: [
-    { label: 'Usługi informatyczne', kind: 'link', url: 'https://student.sum.edu.pl/uslugi-informatyczne-dla-studentow/' },
-  ],
-  erasmus: [
-    { label: 'Wyjazdy studentów', kind: 'link', url: 'https://student.sum.edu.pl/wyjazdy-studentow/' },
-  ],
-  praktyki: [
-    { label: 'Praktyki studenckie', kind: 'link', url: 'https://student.sum.edu.pl/praktyki/' },
-  ],
-  akademik: [
-    { label: 'Domy studenta', kind: 'link', url: 'https://student.sum.edu.pl/domy-studenta/' },
-  ],
+  ubezpieczenie: [/ubezpieczen/i],
+  legitymacja: [/legitymacj/i, /uslugi-informatyczne/i],
+  erasmus: [/erasmus/i, /wyjazdy-studentow/i],
+  praktyki: [/praktyk/i],
+  akademik: [/domy-studenta|akademik|dom-studenta/i],
+  oplaty: [/oplat/i],
+  wsparcie: [/wsparcie-psychologiczne|psychologiczn/i],
+  kontakt: [/kontakt/i],
 };
 
-const FACULTY_SECTIONS: Record<string, Partial<Record<string, ActionButton[]>>> = {
-  wnmz: {
-    kontakt: [{ label: 'Kontakt WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/kontakt/' }],
-    dziekanat: [{ label: 'Dziekanat WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/kontakt/' }],
-    harmonogram: [
-      { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-zajec/' },
-      { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-egzaminow/' },
-    ],
-    egzamin: [{ label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/harmonogramy-egzaminow/' }],
-    praktyki: [{ label: 'Praktyki WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/praktyki/' }],
-    dokumenty: [{ label: 'Dokumenty WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/dokumenty-do-pobrania/' }],
-    regulamin: [{ label: 'Regulaminy WNMZ', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-zabrzu/wnmz-regulaminy/' }],
-  },
-  wnmk: {
-    kontakt: [{ label: 'Kontakt WNMK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/kontakt/' }],
-    dziekanat: [{ label: 'Dziekanat WNMK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/kontakt/' }],
-    harmonogram: [
-      { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-zajec/' },
-      { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-egzaminow/' },
-    ],
-    egzamin: [{ label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/harmonogramy-egzaminow/' }],
-    praktyki: [{ label: 'Praktyki WNMK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/praktyki/' }],
-    dokumenty: [{ label: 'Dokumenty WNMK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/dokumenty-do-pobrania/' }],
-    regulamin: [{ label: 'Regulaminy WNMK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-medycznych-w-katowicach/regulaminy/' }],
-  },
-  wnozk: {
-    kontakt: [{ label: 'Kontakt WNoZK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/kontakt/' }],
-    dziekanat: [{ label: 'Dziekanat WNoZK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/kontakt/' }],
-    harmonogram: [
-      { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy/' },
-      { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy-egzaminow/' },
-    ],
-    egzamin: [{ label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/harmonogramy-egzaminow/' }],
-    praktyki: [{ label: 'Praktyki WNoZK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/praktyki/' }],
-    dokumenty: [{ label: 'Dokumenty WNoZK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/dokumenty-do-pobrania/' }],
-    regulamin: [{ label: 'Regulaminy WNoZK', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-zdrowiu-w-katowicach/regulaminy/' }],
-  },
-  wnf: {
-    kontakt: [{ label: 'Kontakt WNF', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/kontakt/' }],
-    dziekanat: [{ label: 'Dziekanat WNF', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/kontakt/' }],
-    harmonogram: [
-      { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-zajec/' },
-      { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-egzaminow/' },
-    ],
-    egzamin: [{ label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/harmonogramy-egzaminow/' }],
-    praktyki: [{ label: 'Praktyki WNF', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/praktyki/' }],
-    dokumenty: [{ label: 'Dokumenty WNF', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/dokumenty-do-pobrania/' }],
-    regulamin: [{ label: 'Regulaminy WNF', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-nauk-o-farmaceutycznych-w-sosnowcu/regulaminy/' }],
-  },
-  wzpb: {
-    kontakt: [{ label: 'Kontakt WZPB', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/kontakt-opiekunowie-roku/' }],
-    dziekanat: [{ label: 'Dziekanat WZPB', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/kontakt-opiekunowie-roku/' }],
-    harmonogram: [
-      { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-zajec/' },
-      { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-egzaminow/' },
-    ],
-    egzamin: [{ label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/harmonogramy-egzaminow/' }],
-    praktyki: [{ label: 'Praktyki WZPB', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/praktyki/' }],
-    dokumenty: [{ label: 'Dokumenty WZPB', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/dokumenty-do-pobrania/' }],
-    regulamin: [{ label: 'Regulaminy WZPB', kind: 'link', url: 'https://student.sum.edu.pl/wydzial-zdrowia-publicznego-w-bytomiu/regulaminy/' }],
-  },
-  fbb: {
-    kontakt: [{ label: 'Kontakt FBB', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/kontakt/' }],
-    dziekanat: [{ label: 'Dziekanat FBB', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/kontakt/' }],
-    harmonogram: [
-      { label: 'Harmonogramy zajęć', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy/' },
-      { label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy-egzaminow/' },
-    ],
-    egzamin: [{ label: 'Harmonogramy egzaminów', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/harmonogramy-egzaminow/' }],
-    praktyki: [{ label: 'Praktyki FBB', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/praktyki/' }],
-    dokumenty: [{ label: 'Dokumenty FBB', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/dokumenty-do-pobrania-kopia/' }],
-    regulamin: [{ label: 'Regulaminy FBB', kind: 'link', url: 'https://student.sum.edu.pl/filia-w-bielsku-bialej/regulaminy/' }],
-  },
+const FACULTY_TOPIC_MATCHERS: Record<string, RegExp[]> = {
+  harmonogram: [/harmonogram/i],
+  egzamin: [/egzamin/i],
+  praktyki: [/praktyk/i],
+  dziekanat: [/kontakt|dziekanat|sekretariat/i],
+  kontakt: [/kontakt/i],
+  regulamin: [/regulamin/i],
+  dokumenty: [/dokumenty-do-pobrania|dokument/i],
 };
 
-export function buildActionButtons(input: {
+let cache: { fetchedAt: number; items: WPItem[] } | null = null;
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function isCopyLike(item: WPItem): boolean {
+  const raw = `${item.slug} ${stripHtml(item.title.rendered)}`.toLowerCase();
+  return /\b(kopia|copy)\b/.test(raw) || /\(kopia\)/i.test(raw);
+}
+
+function cleanLabel(raw: string): string {
+  return raw
+    .replace(/\s*\((kopia|copy)\)\s*/gi, ' ')
+    .replace(/\b(kopia|copy)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return parsed.toString();
+  } catch {
+    return url.trim();
+  }
+}
+
+async function fetchJsonWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchAll(endpoint: string): Promise<WPItem[]> {
+  const items: WPItem[] = [];
+  let page = 1;
+
+  while (true) {
+    const url = `${WP_BASE_URL}/${endpoint}?per_page=50&page=${page}&status=publish&_fields=id,slug,link,title,type`;
+    const res = await fetchJsonWithTimeout(url);
+    if (!res.ok) {
+      throw new Error(`WP fetch failed for ${endpoint} page ${page}: ${res.status}`);
+    }
+
+    const batch = await res.json() as WPItem[];
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    items.push(...batch);
+
+    const totalPages = Number(res.headers.get('x-wp-totalpages') ?? '1');
+    if (page >= totalPages) break;
+    page += 1;
+  }
+
+  return items;
+}
+
+async function getWpCatalog(): Promise<WPItem[]> {
+  if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+    return cache.items;
+  }
+
+  try {
+    const [pages, posts, placowki] = await Promise.all([
+      fetchAll('pages'),
+      fetchAll('posts'),
+      fetchAll('placowki'),
+    ]);
+
+    const items = [...pages, ...posts, ...placowki];
+    cache = { fetchedAt: Date.now(), items };
+    return items;
+  } catch (error) {
+    console.warn('[ActionButtons] WP catalog fetch failed, using fallback.', error);
+    if (cache?.items?.length) {
+      return cache.items;
+    }
+    return [];
+  }
+}
+
+function dedupe(buttons: ActionButton[]): ActionButton[] {
+  const seen = new Set<string>();
+  return buttons.filter((button) => {
+    const key = button.kind === 'link'
+      ? `link:${normalizeUrl(button.url ?? '')}`
+      : `query:${(button.query ?? '').trim().toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function toButton(item: WPItem): ActionButton {
+  const label = cleanLabel(stripHtml(item.title.rendered) || item.slug);
+  return {
+    label,
+    kind: 'link',
+    url: normalizeUrl(item.link),
+  };
+}
+
+function rankGeneralTopicItems(topic: string, items: WPItem[]): WPItem[] {
+  const matchers = GENERAL_TOPIC_MATCHERS[topic] ?? [];
+  return items
+    .filter((item) => !isCopyLike(item))
+    .filter((item) => {
+      const haystack = `${item.slug} ${item.link} ${stripHtml(item.title.rendered)}`;
+      return matchers.some((rx) => rx.test(haystack));
+    })
+    .sort((a, b) => {
+      const aTitle = stripHtml(a.title.rendered);
+      const bTitle = stripHtml(b.title.rendered);
+      const aScore = Number(/stypendium|ministra|socjalne|rektora|zapomogi|ubezpieczenie|legitymacj|erasmus|praktyki|domy studenta/i.test(aTitle));
+      const bScore = Number(/stypendium|ministra|socjalne|rektora|zapomogi|ubezpieczenie|legitymacj|erasmus|praktyki|domy studenta/i.test(bTitle));
+      return bScore - aScore;
+    });
+}
+
+function rankFacultyItems(facultyId: string, topic: string, items: WPItem[]): WPItem[] {
+  const facultyPattern = FACULTY_URL_PATTERNS[facultyId];
+  const topicMatchers = FACULTY_TOPIC_MATCHERS[topic] ?? [];
+
+  return items
+    .filter((item) => !isCopyLike(item))
+    .filter((item) => facultyPattern?.test(item.link))
+    .filter((item) => {
+      const haystack = `${item.slug} ${item.link} ${stripHtml(item.title.rendered)}`;
+      return topicMatchers.some((rx) => rx.test(haystack));
+    })
+    .sort((a, b) => {
+      const aTitle = stripHtml(a.title.rendered);
+      const bTitle = stripHtml(b.title.rendered);
+      const aExact = Number(topic === 'harmonogram' ? /harmonogramy zajęć|harmonogramy zajec/i.test(aTitle) : false)
+        + Number(topic === 'egzamin' ? /harmonogramy egzaminów|harmonogramy egzaminow/i.test(aTitle) : false)
+        + Number(topic === 'dziekanat' ? /kontakt|dziekanat/i.test(aTitle) : false);
+      const bExact = Number(topic === 'harmonogram' ? /harmonogramy zajęć|harmonogramy zajec/i.test(bTitle) : false)
+        + Number(topic === 'egzamin' ? /harmonogramy egzaminów|harmonogramy egzaminow/i.test(bTitle) : false)
+        + Number(topic === 'dziekanat' ? /kontakt|dziekanat/i.test(bTitle) : false);
+      return bExact - aExact;
+    });
+}
+
+function labelFacultyItem(facultyId: string, topic: string, item: WPItem): ActionButton {
+  const raw = cleanLabel(stripHtml(item.title.rendered));
+  if (/kontakt/i.test(raw) && (topic === 'dziekanat' || topic === 'kontakt')) {
+    return {
+      label: `${topic === 'dziekanat' ? 'Dziekanat' : 'Kontakt'} ${FACULTY_LABELS[facultyId]}`,
+      kind: 'link',
+      url: normalizeUrl(item.link),
+    };
+  }
+  return { label: raw, kind: 'link', url: normalizeUrl(item.link) };
+}
+
+export async function buildActionButtons(input: {
   topicTags: string[];
   scope: 'general' | 'faculty';
   facultyId: string | null;
   responseType: 'answer' | 'fallback' | 'clarification' | 'refusal';
-}): ActionButton[] {
+  sourceUrls?: string[];
+}): Promise<ActionButton[]> {
   if (input.responseType === 'refusal') return [];
 
+  const wpItems = await getWpCatalog();
   const buttons: ActionButton[] = [];
 
+  if (input.sourceUrls?.length) {
+    const sourceSet = new Set(input.sourceUrls.map(normalizeUrl));
+    for (const item of wpItems) {
+      if (isCopyLike(item)) continue;
+      if (sourceSet.has(normalizeUrl(item.link))) buttons.push(toButton(item));
+    }
+  }
+
   if (input.scope === 'general') {
-    for (const tag of input.topicTags) {
-      buttons.push(...(GENERAL_TOPIC_LINKS[tag] ?? []));
+    for (const topic of input.topicTags) {
+      const matches = rankGeneralTopicItems(topic, wpItems).slice(0, topic === 'stypendium' ? 7 : 3);
+      buttons.push(...matches.map(toButton));
     }
   }
 
   if (input.scope === 'faculty' && input.facultyId) {
-    const facultyConfig = FACULTY_SECTIONS[input.facultyId] ?? {};
-    for (const tag of input.topicTags) {
-      buttons.push(...(facultyConfig[tag] ?? []));
+    for (const topic of input.topicTags) {
+      const matches = rankFacultyItems(input.facultyId, topic, wpItems).slice(0, 4);
+      buttons.push(...matches.map((item) => labelFacultyItem(input.facultyId!, topic, item)));
     }
   }
 
-  const seen = new Set<string>();
-  return buttons.filter((button) => {
-    const key = `${button.kind}:${button.label}:${button.url ?? button.query ?? ''}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, 8);
+  return dedupe(buttons).slice(0, 8);
 }
